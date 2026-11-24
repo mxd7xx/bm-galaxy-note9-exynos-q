@@ -27,9 +27,23 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
 
-      - name: Fix Kernel 4.9 Audit Header Conflict
+      - name: Fix Kernel 4.9 Headers & Include Paths
         run: |
-          sed -i 's/extern int[[:space:]]*audit_update_lsm_rules(void);/\/\/ &/' include/linux/audit.h
+          # Fix audit_update_lsm_rules duplicate inline stub in audit.h
+          python3 -c '
+          with open("include/linux/audit.h", "r") as f:
+              text = f.read()
+          target = "static inline int audit_update_lsm_rules(void)\n{\n\treturn 0;\n}"
+          if target in text:
+              text = text.replace(target, "// removed duplicate stub")
+          else:
+              import re
+              text = re.sub(r"static inline int audit_update_lsm_rules\(void\)\s*\{[^}]*\}", "// removed duplicate stub", text)
+          with open("include/linux/audit.h", "w") as f:
+              f.write(text)
+          '
+          # Fix relative include path for drivers/md/dm.h in Samsung FIVE
+          sed -i 's|#include "drivers/md/dm.h"|#include "../../../drivers/md/dm.h"|g' security/samsung/five/five_dmverity.c
 
       - name: Enable KernelSU in Defconfig
         run: |
