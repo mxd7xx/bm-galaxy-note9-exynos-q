@@ -18,10 +18,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libncurses5-dev lz4 python3 python3-pip zip wget
 
-      - name: Setup GCC 4.9 Toolchain (Android NDK / Linaro)
+      - name: Setup Proton Clang 13 & GCC 4.9 Toolchain
         run: |
           mkdir -p toolchain
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang toolchain/proton-clang
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain/aarch64-linux-android-4.9
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 toolchain/arm-linux-androideabi-4.9
 
       - name: Integrate KernelSU-Next (Legacy 4.9)
         run: |
@@ -44,10 +46,16 @@ jobs:
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+          export PATH="$(pwd)/toolchain/proton-clang/bin:$(pwd)/toolchain/aarch64-linux-android-4.9/bin:$(pwd)/toolchain/arm-linux-androideabi-4.9/bin:$PATH"
           mkdir -p out
-          make O=out $DEFCONFIG_NAME
-          make O=out -j$(nproc --all) Image
+          make O=out ARCH=arm64 $DEFCONFIG_NAME
+          make O=out -j$(nproc --all) \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
 
       - name: Package AnyKernel3 Flashable ZIP
         run: |
