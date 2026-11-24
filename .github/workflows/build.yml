@@ -18,25 +18,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libncurses5-dev lz4 python3 python3-pip zip wget
 
-      - name: Setup Proton Clang 13 & GCC 4.9 Toolchain
+      - name: Setup GCC 4.9 Toolchain
         run: |
           mkdir -p toolchain
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang toolchain/proton-clang
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain/aarch64-linux-android-4.9
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 toolchain/arm-linux-androideabi-4.9
 
       - name: Integrate KernelSU-Next (Legacy 4.9)
         run: |
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
 
-      - name: Detect Defconfig & Enable KernelSU
+      - name: Enable KernelSU in Defconfig
         run: |
-          DEFCONFIG=$(ls arch/arm64/configs/*crownlte* 2>/dev/null | head -n 1 | xargs -n 1 basename)
-          if [ -z "$DEFCONFIG" ]; then
-            DEFCONFIG=$(ls arch/arm64/configs/*exynos9810* 2>/dev/null | head -n 1 | xargs -n 1 basename)
-          fi
-          echo "Using defconfig: $DEFCONFIG"
-          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
+          DEFCONFIG="exynos9810-crownlte_defconfig"
           echo "CONFIG_KSU=y" >> arch/arm64/configs/$DEFCONFIG
           echo "CONFIG_KPROBES=y" >> arch/arm64/configs/$DEFCONFIG
           echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/$DEFCONFIG
@@ -44,18 +37,13 @@ jobs:
 
       - name: Build Kernel Image
         run: |
+          set -o pipefail
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH="$(pwd)/toolchain/proton-clang/bin:$(pwd)/toolchain/aarch64-linux-android-4.9/bin:$(pwd)/toolchain/arm-linux-androideabi-4.9/bin:$PATH"
+          export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
           mkdir -p out
-          make O=out ARCH=arm64 $DEFCONFIG_NAME
-          make O=out -j$(nproc --all) \
-            ARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
+          make O=out exynos9810-crownlte_defconfig
+          make O=out -j$(nproc --all) Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
 
       - name: Package AnyKernel3 Flashable ZIP
         run: |
