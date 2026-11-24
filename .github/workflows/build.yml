@@ -31,19 +31,15 @@ jobs:
         run: |
           # Fix audit_update_lsm_rules duplicate inline stub in audit.h
           python3 -c '
+          import re
           with open("include/linux/audit.h", "r") as f:
               text = f.read()
-          target = "static inline int audit_update_lsm_rules(void)\n{\n\treturn 0;\n}"
-          if target in text:
-              text = text.replace(target, "// removed duplicate stub")
-          else:
-              import re
-              text = re.sub(r"static inline int audit_update_lsm_rules\(void\)\s*\{[^}]*\}", "// removed duplicate stub", text)
+          text = re.sub(r"static inline int audit_update_lsm_rules\(void\)\s*\{[^}]*\}", "// removed duplicate stub", text)
           with open("include/linux/audit.h", "w") as f:
               f.write(text)
           '
-          # Fix relative include path for drivers/md/dm.h in Samsung FIVE
-          sed -i 's|#include "drivers/md/dm.h"|#include "../../../drivers/md/dm.h"|g' security/samsung/five/five_dmverity.c
+          # Add kernel root to include path for Samsung FIVE
+          echo 'ccflags-y += -I$(srctree)' >> security/samsung/five/Makefile
 
       - name: Enable KernelSU in Defconfig
         run: |
