@@ -38,8 +38,8 @@ jobs:
           with open("include/linux/audit.h", "w") as f:
               f.write(text)
           '
-          # Add kernel root to include path for Samsung FIVE
-          echo 'ccflags-y += -I$(srctree)' >> security/samsung/five/Makefile
+          # Fix all relative drivers/ includes in Samsung FIVE
+          sed -i 's|#include "drivers/|#include "../../../drivers/|g' security/samsung/five/*.c security/samsung/five/*.h 2>/dev/null || true
 
       - name: Enable KernelSU in Defconfig
         run: |
