@@ -27,6 +27,10 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
 
+      - name: Fix Kernel 4.9 Audit Header Conflict
+        run: |
+          sed -i 's/extern int[[:space:]]*audit_update_lsm_rules(void);/\/\/ &/' include/linux/audit.h
+
       - name: Enable KernelSU in Defconfig
         run: |
           DEFCONFIG="exynos9810-crownlte_defconfig"
