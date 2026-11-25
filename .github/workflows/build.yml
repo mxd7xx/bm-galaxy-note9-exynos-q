@@ -170,21 +170,29 @@ jobs:
           cp out/arch/arm64/boot/Image pkg_work/Image
 
           python3 - << 'EOF'
-          lines = []
+          import re
+
           with open("pkg_work/anykernel.sh", "r", encoding="utf-8", errors="ignore") as f:
-              for line in f:
-                  stripped = line.lstrip()
-                  if stripped.startswith("block="):
-                      lines.append("block=/dev/block/platform/11120000.ufs/by-name/BOOT;\n")
-                  elif stripped.startswith("do.devicecheck="):
-                      lines.append("do.devicecheck=0;\n")
-                  elif stripped.startswith("is_slot_device="):
-                      lines.append("is_slot_device=0;\n")
-                  else:
-                      lines.append(line)
+              text = f.read()
+
+          text = re.sub(
+              r"(?m)^\s*block\s*=.*$",
+              "block=/dev/block/platform/11120000.ufs/by-name/BOOT;",
+              text,
+          )
+          text = re.sub(
+              r"(?m)^\s*do\.devicecheck\s*=.*$",
+              "do.devicecheck=0;",
+              text,
+          )
+          text = re.sub(
+              r"(?m)^\s*is_slot_device\s*=.*$",
+              "is_slot_device=0;",
+              text,
+          )
 
           with open("pkg_work/anykernel.sh", "w", encoding="utf-8") as f:
-              f.writelines(lines)
+              f.write(text)
           EOF
 
           grep -nE "block=|do\.devicecheck=|is_slot_device=" pkg_work/anykernel.sh
