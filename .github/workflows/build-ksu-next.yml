@@ -107,10 +107,6 @@ jobs:
           audit_path = Path("include/linux/audit.h")
           if audit_path.exists():
               lines = audit_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              for idx_line, l in enumerate(lines, start=1):
-                  if "audit_update_lsm_rules" in l:
-                      print(f"audit.h:{idx_line}: {l.rstrip()}")
-
               out_lines = []
               i = 0
               patched_audit = False
@@ -237,7 +233,7 @@ jobs:
           set -o pipefail
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="--target=aarch64-linux-gnu -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes" \
+            KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes" \
             Image 2>&1 | tee build.log || {
               echo "=== EXACT COMPILER ERRORS ==="
               grep -n -C 3 "error:" build.log | tail -n 50
