@@ -105,16 +105,19 @@ jobs:
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
+        env:
+          DEFCONFIG: exynos9810-crownlte_defconfig
         run: |
-          DEFCONFIG="exynos9810-crownlte_defconfig"
           ls -la arch/arm64/configs/*crownlte* || true
           mkdir -p out
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           python3 - << 'EOF'
+          import os
           from pathlib import Path
 
+          defconfig_name = os.environ.get("DEFCONFIG", "exynos9810-crownlte_defconfig")
           bad_tokens = (
               "-fmodulo-sched-allow-regmoves",
               "-allow-regmoves",
@@ -135,7 +138,7 @@ jobs:
               Path("Makefile"),
               Path("Kbuild"),
               Path("arch/arm64/Makefile"),
-              Path(f"arch/arm64/configs/{DEFCONFIG}"),
+              Path(f"arch/arm64/configs/{defconfig_name}"),
               Path("out/.config"),
               Path("out/include/config/auto.conf"),
           ]:
