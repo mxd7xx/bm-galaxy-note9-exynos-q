@@ -103,19 +103,45 @@ jobs:
               else:
                   print("WARN: input_handle_event not found in drivers/input/input.c")
 
-          # 3. Fix audit_update_lsm_rules static vs non-static declaration in include/linux/audit.h
+          # 3. Guard conflicting static inline audit_update_lsm_rules in include/linux/audit.h
           audit_path = Path("include/linux/audit.h")
           if audit_path.exists():
               lines = audit_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              changed = False
-              for i, line in enumerate(lines):
-                  if "audit_update_lsm_rules" in line and "static inline" not in line and not line.lstrip().startswith("static "):
-                      if line.rstrip().endswith(";"):
-                          lines[i] = line.replace("int audit_update_lsm_rules", "static inline int audit_update_lsm_rules", 1).replace(");", ") { return 0; }", 1)
-                          changed = True
-              if changed:
-                  audit_path.write_text("".join(lines), encoding="utf-8")
-                  print("Patched include/linux/audit.h")
+              for idx_line, l in enumerate(lines, start=1):
+                  if "audit_update_lsm_rules" in l:
+                      print(f"audit.h:{idx_line}: {l.rstrip()}")
+
+              out_lines = []
+              i = 0
+              patched_audit = False
+              while i < len(lines):
+                  line = lines[i]
+                  if "static inline int audit_update_lsm_rules" in line and not patched_audit:
+                      out_lines.append("#if 0\n")
+                      brace_depth = 0
+                      started_body = False
+                      while i < len(lines):
+                          cur = lines[i]
+                          out_lines.append(cur)
+                          if "{" in cur:
+                              brace_depth += cur.count("{")
+                              started_body = True
+                          if "}" in cur:
+                              brace_depth -= cur.count("}")
+                          i += 1
+                          if started_body and brace_depth <= 0:
+                              break
+                          if not started_body and ";" in cur:
+                              break
+                      out_lines.append("#endif\n")
+                      patched_audit = True
+                  else:
+                      out_lines.append(line)
+                      i += 1
+
+              if patched_audit:
+                  audit_path.write_text("".join(out_lines), encoding="utf-8")
+                  print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
