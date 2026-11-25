@@ -3,6 +3,10 @@ name: Build BeastMode KernelSU-Next (N960F OneUI 2.5)
 on:
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -14,13 +18,24 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Ensure WireGuard Kconfig Exists
+      - name: Prepare WireGuard Stubs & Locate Kernel Root
         run: |
-          if [ ! -f "net/wireguard/Kconfig" ]; then
-            mkdir -p net/wireguard
-            touch net/wireguard/Kconfig
-            echo "# WireGuard stub" > net/wireguard/Makefile
+          if [ ! -d "drivers" ]; then
+            SUBDIR=$(find . -maxdepth 2 -type d -name "drivers" | head -n 1 | xargs -r dirname)
+            if [ -n "$SUBDIR" ] && [ "$SUBDIR" != "." ]; then
+              cd "$SUBDIR"
+            else
+              echo "Could not find kernel root directory"
+              pwd
+              ls -la
+              exit 1
+            fi
           fi
+
+          mkdir -p net/wireguard
+          [ -f "net/wireguard/Kconfig" ] || touch net/wireguard/Kconfig
+          [ -f "net/wireguard/Makefile" ] || echo "# WireGuard stub" > net/wireguard/Makefile
+          ls -la net/wireguard/
 
       - name: Install Dependencies
         run: |
@@ -34,17 +49,6 @@ jobs:
 
       - name: Integrate KernelSU-Next
         run: |
-          if [ ! -d "drivers" ]; then
-            SUBDIR=$(find . -maxdepth 2 -type d -name "drivers" | head -n 1 | xargs -r dirname)
-            if [ -n "$SUBDIR" ] && [ "$SUBDIR" != "." ]; then
-              cd "$SUBDIR"
-            else
-              echo "Current dir: $(pwd)"
-              ls -la
-              exit 1
-            fi
-          fi
-
           rm -rf KernelSU-Next-src KernelSU-Next drivers/kernelsu
           git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git KernelSU-Next-src
 
@@ -69,6 +73,10 @@ jobs:
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
+          mkdir -p net/wireguard
+          [ -f "net/wireguard/Kconfig" ] || touch net/wireguard/Kconfig
+          [ -f "net/wireguard/Makefile" ] || echo "# WireGuard stub" > net/wireguard/Makefile
+
           python3 - << 'EOF'
           import re
 
@@ -136,6 +144,10 @@ jobs:
 
       - name: Patch Linux 4.9 Hooks & Enable KernelSU in Defconfig
         run: |
+          mkdir -p net/wireguard out
+          [ -f "net/wireguard/Kconfig" ] || touch net/wireguard/Kconfig
+          [ -f "net/wireguard/Makefile" ] || echo "# WireGuard stub" > net/wireguard/Makefile
+
           python3 - << 'EOF'
           def inject_once(path, anchor, snippet, check_str):
               with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -162,7 +174,6 @@ jobs:
 
           DEFCONFIG="exynos9810-crownlte_defconfig"
           scripts/config --file arch/arm64/configs/$DEFCONFIG -e KSU -d KPROBES -d KPROBE_EVENTS
-          mkdir -p out
           make O=out $DEFCONFIG
           scripts/config --file out/.config -e KSU -d KPROBES -d KPROBE_EVENTS
           grep -E "^CONFIG_KSU=" out/.config || { echo "ERROR: CONFIG_KSU not enabled in out/.config"; exit 1; }
@@ -170,6 +181,10 @@ jobs:
       - name: Build Kernel Image
         run: |
           set -o pipefail
+          mkdir -p net/wireguard
+          [ -f "net/wireguard/Kconfig" ] || touch net/wireguard/Kconfig
+          [ -f "net/wireguard/Makefile" ] || echo "# WireGuard stub" > net/wireguard/Makefile
+
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
