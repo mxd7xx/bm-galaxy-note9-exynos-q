@@ -149,24 +149,34 @@ jobs:
           [ -f "net/wireguard/Makefile" ] || echo "# WireGuard stub" > net/wireguard/Makefile
 
           python3 - << 'EOF'
-          def inject_once(path, anchor, snippet, check_str):
+          import re
+
+          def inject_before_func_def(path, func_name, decl_line, check_str):
               with open(path, "r", encoding="utf-8", errors="ignore") as f:
                   src = f.read()
-              if check_str in src or anchor not in src:
+              if check_str in src:
                   return
-              src = src.replace(anchor, snippet + "\n" + anchor, 1)
+              # Match a function definition header ending with ")\n{"
+              pattern = re.compile(
+                  r"(?m)^(?:static\s+)?(?:inline\s+)?[\w\*\s]+\b" + re.escape(func_name) + r"\s*\([^;]*?\)\s*\n\{",
+              )
+              m = pattern.search(src)
+              if not m:
+                  return
+              idx = m.start()
+              src = src[:idx] + decl_line + "\n\n" + src[idx:]
               with open(path, "w", encoding="utf-8") as f:
                   f.write(src)
 
-          inject_once(
+          inject_before_func_def(
               "fs/exec.c",
-              "do_execveat_common(",
+              "do_execveat_common",
               "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);",
               "ksu_handle_execveat",
           )
-          inject_once(
+          inject_before_func_def(
               "drivers/input/input.c",
-              "void input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)",
+              "input_event",
               "extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);",
               "ksu_handle_input_handle_event",
           )
