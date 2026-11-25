@@ -12,6 +12,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          submodules: recursive
+
+      - name: Ensure WireGuard Kconfig Exists
+        run: |
+          if [ ! -f "net/wireguard/Kconfig" ]; then
+            mkdir -p net/wireguard
+            touch net/wireguard/Kconfig
+            echo "# WireGuard stub" > net/wireguard/Makefile
+          fi
 
       - name: Install Dependencies
         run: |
