@@ -16,7 +16,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libncurses5-dev lz4 python3 python3-pip zip wget
+          sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libncurses5-dev lz4 python3 python3-pip zip wget unzip
 
       - name: Setup GCC 4.9 Toolchain
         run: |
@@ -120,41 +120,4 @@ jobs:
           """
           if "int path_umount(" not in text:
               text = text.replace("SYSCALL_DEFINE2(umount,", patch + "\nSYSCALL_DEFINE2(umount,", 1)
-          with open("fs/namespace.c", "w") as f:
-              f.write(text)
-          '
-          sed -i '/extern void __init mnt_init/a int path_umount(struct path *path, int flags);' fs/internal.h
-
-      - name: Enable KernelSU in Defconfig
-        run: |
-          DEFCONFIG="exynos9810-crownlte_defconfig"
-          scripts/config --file arch/arm64/configs/$DEFCONFIG \
-            -e KSU \
-            -d KPROBES \
-            -d KPROBE_EVENTS
-
-      - name: Build Kernel Image
-        run: |
-          set -o pipefail
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          mkdir -p out
-          make O=out exynos9810-crownlte_defconfig
-          make O=out -j$(nproc --all) Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
-
-      - name: Package AnyKernel3 Flashable ZIP
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-          cp out/arch/arm64/boot/Image AnyKernel3/
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
-          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=/dev/block/platform/11120000.ufs/by-name/BOOT;|g' AnyKernel3/anykernel.sh
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
-          cd AnyKernel3
-          zip -r9 ../BeastMode-N960F-OneUI2.5-KernelSU-Next.zip * -x .git README.md *placeholder
-
-      - name: Upload Kernel ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: BeastMode-N960F-OneUI2.5-KernelSU-Next
-          path: BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
+          with
