@@ -139,26 +139,20 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Forward-declare wakeup_source_deactivate right before line 603 / first call in wakeup.c
+          # 4. Insert forward declaration immediately before wakeup_source_deactivate(ws
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
-              if fwd_stmt.strip() not in "".join(w_lines):
-                  target_idx = -1
+              if fwd_stmt not in w_lines:
                   for idx_line, l in enumerate(w_lines):
-                      if "wakeup_source_deactivate" in l and "struct wakeup_source" not in l:
-                          target_idx = idx_line
+                      if "wakeup_source_deactivate(ws" in l:
+                          w_lines.insert(idx_line, fwd_stmt)
+                          wakeup_path.write_text("".join(w_lines), encoding="utf-8")
+                          print(f"PATCHED wakeup.c at line {idx_line + 1}")
                           break
-                  if target_idx == -1 and len(w_lines) >= 603:
-                      target_idx = 602
-                  if target_idx != -1:
-                      w_lines.insert(target_idx, fwd_stmt)
-                      wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                      print(f"Inserted wakeup_source_deactivate forward decl at line {target_idx + 1}")
-              for line_no in range(max(0, 598), min(len(w_lines), 608)):
-                  print(f"wakeup.c:{line_no + 1}: {w_lines[line_no].rstrip()}")
           EOF
+          grep -n -C 2 "wakeup_source_deactivate" drivers/base/power/wakeup.c || true
 
       - name: Configure Defconfig with CONFIG_KSU=y
         env:
