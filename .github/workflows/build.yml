@@ -23,9 +23,9 @@ jobs:
           mkdir -p toolchain
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain/aarch64-linux-android-4.9
 
-      - name: Integrate KernelSU-Next (Legacy 4.9)
+      - name: Integrate KernelSU-Next
         run: |
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
@@ -99,10 +99,10 @@ jobs:
       - name: Enable KernelSU in Defconfig
         run: |
           DEFCONFIG="exynos9810-crownlte_defconfig"
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/$DEFCONFIG
-          echo "CONFIG_KPROBES=y" >> arch/arm64/configs/$DEFCONFIG
-          echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/$DEFCONFIG
-          echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/$DEFCONFIG
+          scripts/config --file arch/arm64/configs/$DEFCONFIG \
+            -e KSU \
+            -d KPROBES \
+            -d KPROBE_EVENTS
 
       - name: Build Kernel Image
         run: |
