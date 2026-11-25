@@ -42,7 +42,7 @@ jobs:
           sed -i 's|#include "drivers/|#include "../../../drivers/|g' security/samsung/five/*.c security/samsung/five/*.h 2>/dev/null || true
           # Forward-declare wakeup_source_deactivate before wakeup_source_blocker
           sed -i '/wakeup_source_blocker/i static void wakeup_source_deactivate(struct wakeup_source *ws);' drivers/base/power/wakeup.c
-          # Stub broken exynos-ss-log lockup helpers cleanly with leading newline
+          # Stub broken exynos-ss-log lockup helpers cleanly
           python3 -c '
           with open("drivers/trace/exynos-ss-log.c", "r") as f:
               text = f.read()
@@ -52,6 +52,8 @@ jobs:
           with open("drivers/trace/exynos-ss-log.c", "w") as f:
               f.write(text)
           '
+          # Stub update_hardlockup_type in exynos-ss-utils.c
+          sed -i '/exynos_ss_hook_hardlockup_entry/i static inline void update_hardlockup_type(int cpu) {}' drivers/trace/exynos-ss-utils.c
 
       - name: Enable KernelSU in Defconfig
         run: |
