@@ -49,11 +49,10 @@ jobs:
           git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git KernelSU-Next-src
 
           if [ -f "KernelSU-Next-src/kernel/setup.sh" ]; then
-            bash KernelSU-Next-src/kernel/setup.sh drivers/ || {
-              mkdir -p drivers/kernelsu
-              cp -r KernelSU-Next-src/kernel/* drivers/kernelsu/
-            }
-          else
+            bash KernelSU-Next-src/kernel/setup.sh drivers/ || true
+          fi
+
+          if [ ! -d "drivers/kernelsu" ]; then
             mkdir -p drivers/kernelsu
             cp -r KernelSU-Next-src/kernel/* drivers/kernelsu/
           fi
@@ -64,6 +63,9 @@ jobs:
           if [ -f "drivers/kernelsu/Makefile" ] && ! grep -q "kernelsu/" drivers/Makefile; then
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
+
+          ls -la drivers/kernelsu
+          grep -rnE "ksu_handle_|kernelsu_init" drivers/kernelsu/ | head -n 30 || true
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
@@ -132,13 +134,38 @@ jobs:
           sed -i '/exynos_ss_hook_hardlockup_entry/i static inline void update_hardlockup_type(int cpu) {}' drivers/trace/exynos-ss-utils.c
           sed -i '/extern void __init mnt_init/a int path_umount(struct path *path, int flags);' fs/internal.h
 
-      - name: Enable KernelSU in Defconfig
+      - name: Patch Linux 4.9 Hooks & Enable KernelSU in Defconfig
         run: |
+          python3 - << 'EOF'
+          def inject_once(path, anchor, snippet, check_str):
+              with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                  src = f.read()
+              if check_str in src or anchor not in src:
+                  return
+              src = src.replace(anchor, snippet + "\n" + anchor, 1)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(src)
+
+          inject_once(
+              "fs/exec.c",
+              "do_execveat_common(",
+              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);",
+              "ksu_handle_execveat",
+          )
+          inject_once(
+              "drivers/input/input.c",
+              "void input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)",
+              "extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);",
+              "ksu_handle_input_handle_event",
+          )
+          EOF
+
           DEFCONFIG="exynos9810-crownlte_defconfig"
-          scripts/config --file arch/arm64/configs/$DEFCONFIG \
-            -e KSU \
-            -d KPROBES \
-            -d KPROBE_EVENTS
+          scripts/config --file arch/arm64/configs/$DEFCONFIG -e KSU -d KPROBES -d KPROBE_EVENTS
+          mkdir -p out
+          make O=out $DEFCONFIG
+          scripts/config --file out/.config -e KSU -d KPROBES -d KPROBE_EVENTS
+          grep -E "^CONFIG_KSU=" out/.config || { echo "ERROR: CONFIG_KSU not enabled in out/.config"; exit 1; }
 
       - name: Build Kernel Image
         run: |
@@ -146,8 +173,6 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          mkdir -p out
-          make O=out exynos9810-crownlte_defconfig
           make O=out -j$(nproc --all) Image 2>&1 | tee build.log || {
             echo "=== LAST 80 LINES OF BUILD LOG ==="
             tail -n 80 build.log
@@ -176,17 +201,17 @@ jobs:
               text = f.read()
 
           text = re.sub(
-              r"(?m)^\s*block\s*=.*$",
-              "block=/dev/block/platform/11120000.ufs/by-name/BOOT;",
+              r"(?mi)^\s*block\s*=.*$",
+              "BLOCK=/dev/block/platform/11120000.ufs/by-name/BOOT;",
               text,
           )
           text = re.sub(
-              r"(?m)^\s*do\.devicecheck\s*=.*$",
+              r"(?mi)^\s*do\.devicecheck\s*=.*$",
               "do.devicecheck=0;",
               text,
           )
           text = re.sub(
-              r"(?m)^\s*is_slot_device\s*=.*$",
+              r"(?mi)^\s*is_slot_device\s*=.*$",
               "is_slot_device=0;",
               text,
           )
@@ -195,7 +220,7 @@ jobs:
               f.write(text)
           EOF
 
-          grep -nE "block=|do\.devicecheck=|is_slot_device=" pkg_work/anykernel.sh
+          grep -niE "block=|do\.devicecheck=|is_slot_device=" pkg_work/anykernel.sh
           test -f pkg_work/META-INF/com/google/android/update-binary
           test -f pkg_work/tools/ak3-core.sh
 
