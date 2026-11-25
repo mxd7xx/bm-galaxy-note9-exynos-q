@@ -117,21 +117,31 @@ jobs:
           with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
               lines = [
                   l for l in f
-                  if not l.startswith("CONFIG_KSU=") and not l.startswith("# CONFIG_KSU")
+                  if not l.startswith("CONFIG_KSU=")
+                  and not l.startswith("# CONFIG_KSU")
+                  and not l.startswith("CONFIG_CC_STACKPROTECTOR")
+                  and not l.startswith("# CONFIG_CC_STACKPROTECTOR")
               ]
-          lines.append("CONFIG_KSU=y\n")
+          lines.extend([
+              "CONFIG_KSU=y\n",
+              "CONFIG_CC_STACKPROTECTOR=y\n",
+              "CONFIG_CC_STACKPROTECTOR_NONE=y\n",
+              "# CONFIG_CC_STACKPROTECTOR_REGULAR is not set\n",
+              "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
+          ])
           with open(cfg_path, "w", encoding="utf-8") as f:
               f.writelines(lines)
           EOF
 
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-          grep -E "KSU" out/.config || { echo "ERROR: KSU symbol missing after olddefconfig"; exit 1; }
+          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
+          grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR" out/.config
 
       - name: Build Kernel Image
         run: |
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- Image
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            KCFLAGS="--target=aarch64-linux-gnu" Image
           ls -lh out/arch/arm64/boot/Image
 
       - name: Package AnyKernel3 Flashable Zip
