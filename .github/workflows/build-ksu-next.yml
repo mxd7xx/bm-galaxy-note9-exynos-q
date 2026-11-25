@@ -113,7 +113,8 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           python3 - << 'EOF'
-          cfg_path = "out/.config"
+          from pathlib import Path
+
           bad_flags = (
               "-fpredictive-commoning",
               "-fno-aggressive-loop-optimizations",
@@ -122,39 +123,67 @@ jobs:
               "-funswitch-loops",
               "-fgcse-after-reload",
           )
-          with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
-              raw_lines = f.readlines()
 
-          cleaned = []
-          for line in raw_lines:
-              if line.startswith("CONFIG_KSU=") or line.startswith("# CONFIG_KSU"):
-                  continue
-              if line.startswith("CONFIG_CC_STACKPROTECTOR") or line.startswith("# CONFIG_CC_STACKPROTECTOR"):
-                  continue
-              if any(flag in line for flag in bad_flags):
-                  if "=" in line:
-                      k, v = line.split("=", 1)
-                      for flag in bad_flags:
-                          v = v.replace(flag, "")
-                      v = " ".join(v.split())
-                      line = f"{k}={v}\n"
-                  else:
-                      continue
-              cleaned.append(line)
+          def strip_flags_from_file(p: Path):
+              if not p.exists():
+                  return
+              text = p.read_text(encoding="utf-8", errors="ignore")
+              changed = False
+              for flag in bad_flags:
+                  if flag in text:
+                      text = text.replace(flag, "")
+                      changed = True
+              if changed:
+                  p.write_text(text, encoding="utf-8")
+                  print(f"Cleaned GCC flags from {p}")
 
-          cleaned.extend([
+          for target_file in [
+              Path("Makefile"),
+              Path("arch/arm64/Makefile"),
+              Path("out/.config"),
+              Path("out/include/config/auto.conf"),
+          ]:
+              strip_flags_from_file(target_file)
+
+          cfg_path = Path("out/.config")
+          lines = [
+              l for l in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+              if not l.startswith("CONFIG_KSU=")
+              and not l.startswith("# CONFIG_KSU")
+              and not l.startswith("CONFIG_CC_STACKPROTECTOR")
+              and not l.startswith("# CONFIG_CC_STACKPROTECTOR")
+          ]
+          lines.extend([
               "CONFIG_KSU=y\n",
               "CONFIG_CC_STACKPROTECTOR=y\n",
               "CONFIG_CC_STACKPROTECTOR_NONE=y\n",
               "# CONFIG_CC_STACKPROTECTOR_REGULAR is not set\n",
               "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
           ])
-          with open(cfg_path, "w", encoding="utf-8") as f:
-              f.writelines(cleaned)
+          cfg_path.write_text("".join(lines), encoding="utf-8")
           EOF
 
           yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
+
+          python3 - << 'EOF'
+          from pathlib import Path
+          bad_flags = (
+              "-fpredictive-commoning",
+              "-fno-aggressive-loop-optimizations",
+              "-fmodulo-sched",
+              "-fmodulo-sched-allow-regmoves",
+              "-funswitch-loops",
+              "-fgcse-after-reload",
+          )
+          for p in [Path("out/.config"), Path("out/include/config/auto.conf")]:
+              if p.exists():
+                  text = p.read_text(encoding="utf-8", errors="ignore")
+                  for flag in bad_flags:
+                      text = text.replace(flag, "")
+                  p.write_text(text, encoding="utf-8")
+          EOF
+
           grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR" out/.config
 
       - name: Build Kernel Image
