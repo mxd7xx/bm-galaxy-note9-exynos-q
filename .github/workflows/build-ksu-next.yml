@@ -1,0 +1,147 @@
+name: Build BeastMode KernelSU-Next (N960F)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Dependencies and Clang Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex git libssl-dev \
+            libelf-dev lzop python3 zip unzip cpio kmod clang lld llvm
+
+      - name: Setup KernelSU-Next in drivers/kernelsu
+        run: |
+          rm -rf drivers/kernelsu KernelSU-Next
+          git clone --depth=1 --branch=v3.4.2 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next || git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+          if [ -d "KernelSU-Next/kernel" ]; then
+            cp -r KernelSU-Next/kernel drivers/kernelsu
+          else
+            cp -r KernelSU-Next drivers/kernelsu
+          fi
+          rm -rf drivers/kernelsu/.git
+
+          if ! grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig; then
+            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          fi
+          if ! grep -q "obj-\$(CONFIG_KSU) += kernelsu/" drivers/Makefile; then
+            echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          fi
+
+      - name: Inspect KernelSU-Next Symbols and Kconfig
+        run: |
+          echo "=== Kconfig ==="
+          cat drivers/kernelsu/Kconfig
+          echo "=== Hook / Handler Functions ==="
+          grep -rnE "(int|void|bool|long)\s+ksu_[a-zA-Z0-9_]+\s*\(" drivers/kernelsu/ | head -n 80
+          grep -rnE "ksu_handle_[a-zA-Z0-9_]+" drivers/kernelsu/ | head -n 80
+
+      - name: Patch Linux 4.9 Hooks in fs/exec.c and drivers/input/input.c
+        run: |
+          python3 - << 'EOF'
+          from pathlib import Path
+
+          # 1. fs/exec.c hook (do_execveat_common)
+          exec_path = Path("fs/exec.c")
+          exec_src = exec_path.read_text(encoding="utf-8", errors="ignore")
+          if "ksu_handle_execveat" not in exec_src:
+              target = "static int do_execveat_common(int fd, struct filename *filename,"
+              idx = exec_src.find(target)
+              if idx != -1:
+                  brace_idx = exec_src.find("{\n", idx)
+                  if brace_idx != -1:
+                      decl = (
+                          "\n#ifdef CONFIG_KSU\n"
+                          "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, "
+                          "void *argv, void *envp, int *flags);\n"
+                          "#endif\n"
+                      )
+                      hook_call = (
+                          "#ifdef CONFIG_KSU\n"
+                          "\tksu_handle_execveat(&fd, &filename, argv, envp, &flags);\n"
+                          "#endif\n"
+                      )
+                      exec_src = exec_src[:idx] + decl + exec_src[idx:brace_idx + 2] + hook_call + exec_src[brace_idx + 2:]
+                      exec_path.write_text(exec_src, encoding="utf-8")
+                      print("Patched fs/exec.c")
+              else:
+                  print("WARN: do_execveat_common not found in fs/exec.c")
+
+          # 2. drivers/input/input.c hook (input_handle_event)
+          input_path = Path("drivers/input/input.c")
+          input_src = input_path.read_text(encoding="utf-8", errors="ignore")
+          if "ksu_handle_input_event" not in input_src:
+              target = "static void input_handle_event(struct input_dev *dev,"
+              idx = input_src.find(target)
+              if idx != -1:
+                  brace_idx = input_src.find("{\n", idx)
+                  if brace_idx != -1:
+                      decl = (
+                          "\n#ifdef CONFIG_KSU\n"
+                          "extern int ksu_handle_input_event(unsigned int *type, unsigned int *code, int *value);\n"
+                          "#endif\n"
+                      )
+                      hook_call = (
+                          "#ifdef CONFIG_KSU\n"
+                          "\tksu_handle_input_event(&type, &code, &value);\n"
+                          "#endif\n"
+                      )
+                      input_src = input_src[:idx] + decl + input_src[idx:brace_idx + 2] + hook_call + input_src[brace_idx + 2:]
+                      input_path.write_text(input_src, encoding="utf-8")
+                      print("Patched drivers/input/input.c")
+              else:
+                  print("WARN: input_handle_event not found in drivers/input/input.c")
+          EOF
+
+      - name: Configure Defconfig with CONFIG_KSU=y
+        run: |
+          DEFCONFIG="exynos9810-crownlte_defconfig"
+          mkdir -p out
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld "$DEFCONFIG"
+
+          python3 - << 'EOF'
+          cfg_path = "out/.config"
+          with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
+              lines = [
+                  l for l in f
+                  if not l.startswith("CONFIG_KSU=") and not l.startswith("# CONFIG_KSU")
+              ]
+          lines.append("CONFIG_KSU=y\n")
+          with open(cfg_path, "w", encoding="utf-8") as f:
+              f.writelines(lines)
+          EOF
+
+          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig >/dev/null
+          grep -E "CONFIG_KSU" out/.config || { echo "ERROR: CONFIG_KSU not enabled in out/.config"; exit 1; }
+
+      - name: Build Kernel Image
+        run: |
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld Image
+          ls -lh out/arch/arm64/boot/Image
+
+      - name: Package AnyKernel3 Flashable Zip
+        run: |
+          rm -rf AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          rm -rf AnyKernel3/.git AnyKernel3/.github
+          cp out/arch/arm64/boot/Image AnyKernel3/Image
+          cd AnyKernel3
+          zip -r9 ../BeastMode-N960F-OneUI2.5-KernelSU-Next.zip * -x '*.git*'
+          cd ..
+          ls -lh BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
+
+      - name: Upload KernelSU-Next Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeastMode-N960F-OneUI2.5-KernelSU-Next
+          path: BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
