@@ -25,7 +25,14 @@ jobs:
 
       - name: Integrate KernelSU-Next
         run: |
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s
+          rm -rf KernelSU-Next-src drivers/kernelsu
+          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git KernelSU-Next-src
+          if [ -f "KernelSU-Next-src/kernel/setup.sh" ]; then
+            (cd KernelSU-Next-src && bash kernel/setup.sh)
+          else
+            mkdir -p drivers/kernelsu
+            cp -r KernelSU-Next-src/kernel/* drivers/kernelsu/
+          fi
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
