@@ -157,63 +157,47 @@ jobs:
           }
           ls -lh out/arch/arm64/boot/Image
 
-      - name: Package TWRP Flashable Kernel ZIP
+      - name: Package TWRP Flashable Kernel ZIP (AnyKernel3)
         run: |
-          rm -rf pkg_work dist_zip ak3.zip ak3_tmp BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
-          mkdir -p pkg_work dist_zip pkg_work/META-INF/com/google/android
+          rm -rf pkg_work dist_zip ak3_repo BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
+          mkdir -p pkg_work dist_zip
 
-          curl -fsSL https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.zip -o ak3.zip && unzip -q ak3.zip -d ak3_tmp || true
-          if [ -d "ak3_tmp" ]; then
-            TOP_DIR=$(find ak3_tmp -maxdepth 1 -mindepth 1 -type d | head -n 1 || true)
-            if [ -n "$TOP_DIR" ]; then
-              cp -r "$TOP_DIR"/* pkg_work/ || true
-            fi
-          fi
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ak3_repo
+          cp -r ak3_repo/* pkg_work/
+          rm -rf pkg_work/.git pkg_work/.github
 
           test -f out/arch/arm64/boot/Image
           cp out/arch/arm64/boot/Image pkg_work/Image
 
-          mkdir -p pkg_work/META-INF/com/google/android
-          cat << 'EOF' > pkg_work/META-INF/com/google/android/update-binary
-          #!/sbin/sh
-          OUTFD=$2
-          ZIPFILE="$3"
-          ui_print() { echo -e "ui_print $1\nui_print" >> /proc/self/fd/$OUTFD; }
-          mkdir -p /tmp/anykernel
-          unzip -o "$ZIPFILE" -d /tmp/anykernel >/dev/null 2>&1
-          chmod 755 /tmp/anykernel/anykernel.sh
-          cd /tmp/anykernel || exit 1
-          . ./anykernel.sh
-          if [ -n "$block" ] && [ -e "$block" ]; then
-            ui_print "- Writing Image to $block..."
-            dd if="/tmp/anykernel/Image" of="$block" bs=4096 conv=fsync >/dev/null 2>&1 || exit 1
-            sync
-          else
-            ui_print "! Invalid block device: $block"
-            exit 1
-          fi
-          ui_print "- BeastMode KernelSU-Next flashed!"
-          exit 0
-          EOF
-          chmod 755 pkg_work/META-INF/com/google/android/update-binary
-          echo "#MAGISK" > pkg_work/META-INF/com/google/android/updater-script
+          python3 - << 'EOF'
+          lines = []
+          with open("pkg_work/anykernel.sh", "r", encoding="utf-8", errors="ignore") as f:
+              for line in f:
+                  stripped = line.lstrip()
+                  if stripped.startswith("block="):
+                      lines.append("block=/dev/block/platform/11120000.ufs/by-name/BOOT;\n")
+                  elif stripped.startswith("do.devicecheck="):
+                      lines.append("do.devicecheck=0;\n")
+                  elif stripped.startswith("is_slot_device="):
+                      lines.append("is_slot_device=0;\n")
+                  else:
+                      lines.append(line)
 
-          cat << 'EOF' > pkg_work/anykernel.sh
-          block=/dev/block/platform/11120000.ufs/by-name/BOOT;
-          do.devicecheck=0;
-          is_slot_device=0;
+          with open("pkg_work/anykernel.sh", "w", encoding="utf-8") as f:
+              f.writelines(lines)
           EOF
-          chmod 755 pkg_work/anykernel.sh
 
-          grep -n "block=" pkg_work/anykernel.sh
-          rm -rf pkg_work/.git pkg_work/.github pkg_work/README.md
+          grep -nE "block=|do\.devicecheck=|is_slot_device=" pkg_work/anykernel.sh
+          test -f pkg_work/META-INF/com/google/android/update-binary
+          test -f pkg_work/tools/ak3-core.sh
+
           ZIP_ABS="$(pwd)/dist_zip/BeastMode-N960F-OneUI2.5-KernelSU-Next.zip"
           (
             cd pkg_work
             zip -r "$ZIP_ABS" .
           )
           ls -lh "$ZIP_ABS"
-          unzip -l "$ZIP_ABS"
+          unzip -l "$ZIP_ABS" | head -n 30
           zip -T "$ZIP_ABS"
 
       - name: Upload Kernel ZIP
