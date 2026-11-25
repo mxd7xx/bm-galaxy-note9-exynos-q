@@ -25,13 +25,35 @@ jobs:
 
       - name: Integrate KernelSU-Next
         run: |
+          if [ ! -d "drivers" ]; then
+            SUBDIR=$(find . -maxdepth 2 -type d -name "drivers" | head -n 1 | xargs -r dirname)
+            if [ -n "$SUBDIR" ] && [ "$SUBDIR" != "." ]; then
+              cd "$SUBDIR"
+            else
+              echo "Current dir: $(pwd)"
+              ls -la
+              exit 1
+            fi
+          fi
+
           rm -rf KernelSU-Next-src drivers/kernelsu
           git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git KernelSU-Next-src
+
           if [ -f "KernelSU-Next-src/kernel/setup.sh" ]; then
-            (cd KernelSU-Next-src && bash kernel/setup.sh)
+            bash KernelSU-Next-src/kernel/setup.sh drivers/ || {
+              mkdir -p drivers/kernelsu
+              cp -r KernelSU-Next-src/kernel/* drivers/kernelsu/
+            }
           else
             mkdir -p drivers/kernelsu
             cp -r KernelSU-Next-src/kernel/* drivers/kernelsu/
+          fi
+
+          if [ -f "drivers/kernelsu/Kconfig" ] && ! grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig; then
+            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          fi
+          if [ -f "drivers/kernelsu/Makefile" ] && ! grep -q "kernelsu/" drivers/Makefile; then
+            echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
