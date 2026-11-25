@@ -148,7 +148,13 @@ jobs:
           export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
           mkdir -p out
           make O=out exynos9810-crownlte_defconfig
-          make O=out -j$(nproc --all) Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
+          make O=out -j$(nproc --all) Image > build.log 2>&1 || {
+            echo "=== LAST 80 LINES OF BUILD LOG ==="
+            tail -n 80 build.log
+            echo "=== MATCHED ERRORS ==="
+            grep -iE "error:|undefined reference|make\[.*Error" build.log | tail -n 40 || true
+            exit 1
+          }
           ls -lh out/arch/arm64/boot/Image
 
       - name: Package TWRP Flashable Kernel ZIP
