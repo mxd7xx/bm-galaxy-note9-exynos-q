@@ -27,7 +27,7 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
 
-      - name: Fix Kernel 4.9 Headers & Include Paths
+      - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
           # Fix audit_update_lsm_rules duplicate inline stub in audit.h
           python3 -c '
@@ -54,6 +54,47 @@ jobs:
           '
           # Stub update_hardlockup_type in exynos-ss-utils.c
           sed -i '/exynos_ss_hook_hardlockup_entry/i static inline void update_hardlockup_type(int cpu) {}' drivers/trace/exynos-ss-utils.c
+          # Backport path_umount for KernelSU on Linux 4.9
+          python3 -c '
+          with open("fs/namespace.c", "r") as f:
+              text = f.read()
+          patch = """
+          static int can_umount(const struct path *path, int flags)
+          {
+          \tstruct mount *mnt = real_mount(path->mnt);
+          \tif (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
+          \t\treturn -EINVAL;
+          \tif (!may_mount())
+          \t\treturn -EPERM;
+          \tif (path->dentry != path->mnt->mnt_root)
+          \t\treturn -EINVAL;
+          \tif (!check_mnt(mnt))
+          \t\treturn -EINVAL;
+          \tif (mnt->mnt.mnt_flags & MNT_LOCKED)
+          \t\treturn -EINVAL;
+          \tif (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
+          \t\treturn -EPERM;
+          \treturn 0;
+          }
+
+          int path_umount(struct path *path, int flags)
+          {
+          \tstruct mount *mnt = real_mount(path->mnt);
+          \tint ret;
+          \tret = can_umount(path, flags);
+          \tif (!ret)
+          \t\tret = do_umount(mnt, flags);
+          \tdput(path->dentry);
+          \tmntput_no_expire(mnt);
+          \treturn ret;
+          }
+          """
+          if "int path_umount(" not in text:
+              text = text.replace("SYSCALL_DEFINE2(umount,", patch + "\nSYSCALL_DEFINE2(umount,", 1)
+          with open("fs/namespace.c", "w") as f:
+              f.write(text)
+          '
+          sed -i '/extern void __init mnt_init/a int path_umount(struct path *path, int flags);' fs/internal.h
 
       - name: Enable KernelSU in Defconfig
         run: |
