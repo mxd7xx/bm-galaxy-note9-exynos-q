@@ -109,7 +109,7 @@ jobs:
           DEFCONFIG="exynos9810-crownlte_defconfig"
           ls -la arch/arm64/configs/*crownlte* || true
           mkdir -p out
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           python3 - << 'EOF'
@@ -133,13 +133,13 @@ jobs:
               f.writelines(lines)
           EOF
 
-          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
           grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR" out/.config
 
       - name: Build Kernel Image
         run: |
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="--target=aarch64-linux-gnu" Image
           ls -lh out/arch/arm64/boot/Image
