@@ -50,7 +50,6 @@ jobs:
       - name: Patch Linux 4.9 Hooks and Compatibility Fixes
         run: |
           python3 - << 'EOF'
-          import re
           from pathlib import Path
 
           # 1. fs/exec.c hook (do_execveat_common)
@@ -140,23 +139,23 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Forward-declare wakeup_source_deactivate before any earlier call in wakeup.c
+          # 4. File-scope forward declaration of wakeup_source_deactivate after all #include lines
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
               if fwd_stmt.strip() not in "".join(w_lines):
-                  def_idx = len(w_lines)
+                  last_inc = -1
                   for idx_line, l in enumerate(w_lines):
-                      if "wakeup_source_deactivate" in l and "struct wakeup_source *ws" in l:
-                          def_idx = idx_line
-                          break
-                  for idx_line in range(def_idx):
-                      if re.search(r"\bwakeup_source_deactivate\s*\(", w_lines[idx_line]):
-                          w_lines.insert(idx_line, fwd_stmt)
-                          wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                          print(f"Inserted wakeup_source_deactivate forward declaration before line {idx_line + 1} (def at {def_idx + 1})")
-                          break
+                      if l.lstrip().startswith("#include"):
+                          last_inc = idx_line
+                  insert_at = (last_inc + 1) if last_inc != -1 else 0
+                  w_lines.insert(insert_at, "\n" + fwd_stmt + "\n")
+                  wakeup_path.write_text("".join(w_lines), encoding="utf-8")
+                  print(f"File-scope forward decl inserted at line {insert_at + 1}")
+              for idx_l, l in enumerate(wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
+                  if "wakeup_source_deactivate" in l:
+                      print(f"wakeup.c:{idx_l}: {l}")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
