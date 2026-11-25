@@ -50,6 +50,7 @@ jobs:
       - name: Patch Linux 4.9 Hooks and Compatibility Fixes
         run: |
           python3 - << 'EOF'
+          import re
           from pathlib import Path
 
           # 1. fs/exec.c hook (do_execveat_common)
@@ -139,18 +140,24 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Forward-declare wakeup_source_deactivate right before its call in wakeup.c
+          # 4. Forward-declare wakeup_source_deactivate before its call in wakeup.c
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
               if fwd_stmt.strip() not in "".join(w_lines):
+                  def_line = -1
                   for idx_line, l in enumerate(w_lines):
-                      stripped = l.lstrip()
-                      if "wakeup_source_deactivate(" in stripped and not stripped.startswith("static void wakeup_source_deactivate("):
+                      if re.search(r"\bstatic\s+void\s+wakeup_source_deactivate\s*\(", l):
+                          def_line = idx_line
+                          break
+                  for idx_line, l in enumerate(w_lines):
+                      if def_line != -1 and idx_line >= def_line:
+                          break
+                      if re.search(r"\bwakeup_source_deactivate\s*\(", l):
                           w_lines.insert(idx_line, fwd_stmt)
                           wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                          print(f"Inserted wakeup_source_deactivate forward declaration at line {idx_line + 1}")
+                          print(f"Inserted wakeup_source_deactivate forward declaration before line {idx_line + 1}")
                           break
           EOF
 
