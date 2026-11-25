@@ -18,7 +18,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex git libssl-dev \
-            libelf-dev lzop python3 zip unzip cpio kmod clang lld llvm
+            libelf-dev lzop python3 zip unzip cpio kmod clang lld llvm \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
       - name: Setup KernelSU-Next in drivers/kernelsu
         run: |
@@ -107,7 +108,8 @@ jobs:
         run: |
           DEFCONFIG="exynos9810-crownlte_defconfig"
           mkdir -p out
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld "$DEFCONFIG"
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           python3 - << 'EOF'
           cfg_path = "out/.config"
@@ -121,12 +123,14 @@ jobs:
               f.writelines(lines)
           EOF
 
-          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld olddefconfig >/dev/null
+          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
           grep -E "CONFIG_KSU" out/.config || { echo "ERROR: CONFIG_KSU not enabled in out/.config"; exit 1; }
 
       - name: Build Kernel Image
         run: |
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld Image
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- Image
           ls -lh out/arch/arm64/boot/Image
 
       - name: Package AnyKernel3 Flashable Zip
