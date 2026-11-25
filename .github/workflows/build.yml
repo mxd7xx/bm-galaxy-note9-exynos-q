@@ -161,7 +161,17 @@ jobs:
         run: |
           rm -rf pkg_work dist_zip BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
           mkdir -p dist_zip
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git pkg_work
+          CLONE_OK=0
+          for i in 1 2 3; do
+            rm -rf pkg_work
+            if git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git pkg_work; then
+              CLONE_OK=1
+              break
+            fi
+            echo "Retry $i cloning AnyKernel3..."
+            sleep 3
+          done
+          test "$CLONE_OK" -eq 1
           test -f out/arch/arm64/boot/Image
           cp out/arch/arm64/boot/Image pkg_work/Image
           mkdir -p pkg_work/META-INF/com/google/android
@@ -217,4 +227,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BeastMode-N960F-OneUI2.5-KernelSU-Next
-          path: dist_zip/BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
+          path: dist_zip/
