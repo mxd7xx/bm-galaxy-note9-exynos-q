@@ -47,7 +47,7 @@ jobs:
           grep -rnE "(int|void|bool|long)\s+ksu_[a-zA-Z0-9_]+\s*\(" drivers/kernelsu/ | head -n 80
           grep -rnE "ksu_handle_[a-zA-Z0-9_]+" drivers/kernelsu/ | head -n 80
 
-      - name: Patch Linux 4.9 Hooks in fs/exec.c and drivers/input/input.c
+      - name: Patch Linux 4.9 Hooks in fs/exec.c, drivers/input/input.c, and include/linux/audit.h
         run: |
           python3 - << 'EOF'
           from pathlib import Path
@@ -102,6 +102,20 @@ jobs:
                       print("Patched drivers/input/input.c")
               else:
                   print("WARN: input_handle_event not found in drivers/input/input.c")
+
+          # 3. Fix audit_update_lsm_rules static vs non-static declaration in include/linux/audit.h
+          audit_path = Path("include/linux/audit.h")
+          if audit_path.exists():
+              lines = audit_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+              changed = False
+              for i, line in enumerate(lines):
+                  if "audit_update_lsm_rules" in line and "static inline" not in line and not line.lstrip().startswith("static "):
+                      if line.rstrip().endswith(";"):
+                          lines[i] = line.replace("int audit_update_lsm_rules", "static inline int audit_update_lsm_rules", 1).replace(");", ") { return 0; }", 1)
+                          changed = True
+              if changed:
+                  audit_path.write_text("".join(lines), encoding="utf-8")
+                  print("Patched include/linux/audit.h")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
