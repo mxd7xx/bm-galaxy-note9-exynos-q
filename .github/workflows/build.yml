@@ -36,7 +36,7 @@ jobs:
             fi
           fi
 
-          rm -rf KernelSU-Next-src drivers/kernelsu
+          rm -rf KernelSU-Next-src KernelSU-Next drivers/kernelsu
           git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git KernelSU-Next-src
 
           if [ -f "KernelSU-Next-src/kernel/setup.sh" ]; then
@@ -58,34 +58,28 @@ jobs:
 
       - name: Fix Kernel 4.9 Headers, Include Paths & Backport path_umount
         run: |
-          # Fix audit_update_lsm_rules duplicate inline stub in audit.h
-          python3 -c '
+          python3 - << 'EOF'
           import re
-          with open("include/linux/audit.h", "r") as f:
+
+          with open("include/linux/audit.h", "r", encoding="utf-8", errors="ignore") as f:
               text = f.read()
-          text = re.sub(r"static inline int audit_update_lsm_rules\(void\)\s*\{[^}]*\}", "// removed duplicate stub", text)
-          with open("include/linux/audit.h", "w") as f:
+          text = re.sub(
+              r"static inline int audit_update_lsm_rules\(void\)\s*\{[^}]*\}",
+              "// removed duplicate stub",
+              text,
+          )
+          with open("include/linux/audit.h", "w", encoding="utf-8") as f:
               f.write(text)
-          '
-          # Fix all relative drivers/ includes in Samsung FIVE
-          sed -i 's|#include "drivers/|#include "../../../drivers/|g' security/samsung/five/*.c security/samsung/five/*.h 2>/dev/null || true
-          # Forward-declare wakeup_source_deactivate before wakeup_source_blocker
-          sed -i '/wakeup_source_blocker/i static void wakeup_source_deactivate(struct wakeup_source *ws);' drivers/base/power/wakeup.c
-          # Stub broken exynos-ss-log lockup helpers cleanly
-          python3 -c '
-          with open("drivers/trace/exynos-ss-log.c", "r") as f:
+
+          with open("drivers/trace/exynos-ss-log.c", "r", encoding="utf-8", errors="ignore") as f:
               text = f.read()
           target = "static inline void exynos_ss_get_busiest_irq("
-          if target in text:
+          if target in text and "#if 0\n" + target not in text:
               text = text.replace(target, "\n#if 0\n" + target, 1) + "\n#endif\n"
-          with open("drivers/trace/exynos-ss-log.c", "w") as f:
+          with open("drivers/trace/exynos-ss-log.c", "w", encoding="utf-8") as f:
               f.write(text)
-          '
-          # Stub update_hardlockup_type in exynos-ss-utils.c
-          sed -i '/exynos_ss_hook_hardlockup_entry/i static inline void update_hardlockup_type(int cpu) {}' drivers/trace/exynos-ss-utils.c
-          # Backport path_umount for KernelSU on Linux 4.9
-          python3 -c '
-          with open("fs/namespace.c", "r") as f:
+
+          with open("fs/namespace.c", "r", encoding="utf-8", errors="ignore") as f:
               text = f.read()
           patch = """
           static int can_umount(const struct path *path, int flags)
@@ -118,6 +112,49 @@ jobs:
           \treturn ret;
           }
           """
-          if "int path_umount(" not in text:
+          if "int path_umount(" not in text and "SYSCALL_DEFINE2(umount," in text:
               text = text.replace("SYSCALL_DEFINE2(umount,", patch + "\nSYSCALL_DEFINE2(umount,", 1)
-          with
+          with open("fs/namespace.c", "w", encoding="utf-8") as f:
+              f.write(text)
+          EOF
+
+          sed -i 's|#include "drivers/|#include "../../../drivers/|g' security/samsung/five/*.c security/samsung/five/*.h 2>/dev/null || true
+          sed -i '/wakeup_source_blocker/i static void wakeup_source_deactivate(struct wakeup_source *ws);' drivers/base/power/wakeup.c
+          sed -i '/exynos_ss_hook_hardlockup_entry/i static inline void update_hardlockup_type(int cpu) {}' drivers/trace/exynos-ss-utils.c
+          sed -i '/extern void __init mnt_init/a int path_umount(struct path *path, int flags);' fs/internal.h
+
+      - name: Enable KernelSU in Defconfig
+        run: |
+          DEFCONFIG="exynos9810-crownlte_defconfig"
+          scripts/config --file arch/arm64/configs/$DEFCONFIG \
+            -e KSU \
+            -d KPROBES \
+            -d KPROBE_EVENTS
+
+      - name: Build Kernel Image
+        run: |
+          set -o pipefail
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=$(pwd)/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
+          mkdir -p out
+          make O=out exynos9810-crownlte_defconfig
+          make O=out -j$(nproc --all) Image 2>&1 | tee build.log || { echo "=== ACTUAL COMPILER ERROR ==="; grep -i -C 5 "error:" build.log | tail -n 50; exit 1; }
+          ls -lh out/arch/arm64/boot/Image
+
+      - name: Package AnyKernel3 Flashable ZIP
+        run: |
+          rm -rf AnyKernel3 BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          cp out/arch/arm64/boot/Image AnyKernel3/Image
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
+          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=/dev/block/platform/11120000.ufs/by-name/BOOT;|g' AnyKernel3/anykernel.sh
+          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
+          (cd AnyKernel3 && zip -r9 ../BeastMode-N960F-OneUI2.5-KernelSU-Next.zip . -x ".git/*" ".github/*" "README.md" "*placeholder")
+          unzip -t BeastMode-N960F-OneUI2.5-KernelSU-Next.zip | grep -E "Image|anykernel.sh"
+
+      - name: Upload Kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeastMode-N960F-OneUI2.5-KernelSU-Next
+          path: BeastMode-N960F-OneUI2.5-KernelSU-Next.zip
