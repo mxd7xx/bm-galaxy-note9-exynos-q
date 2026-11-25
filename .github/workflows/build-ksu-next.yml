@@ -115,35 +115,36 @@ jobs:
           python3 - << 'EOF'
           from pathlib import Path
 
-          bad_flags = (
+          bad_tokens = (
+              "-fmodulo-sched-allow-regmoves",
+              "-allow-regmoves",
+              "allow-regmoves",
+              "-fmodulo-sched",
               "-fpredictive-commoning",
               "-fno-aggressive-loop-optimizations",
-              "-fmodulo-sched",
-              "-fmodulo-sched-allow-regmoves",
               "-funswitch-loops",
               "-fgcse-after-reload",
           )
 
-          def strip_flags_from_file(p: Path):
-              if not p.exists():
-                  return
-              text = p.read_text(encoding="utf-8", errors="ignore")
-              changed = False
-              for flag in bad_flags:
-                  if flag in text:
-                      text = text.replace(flag, "")
-                      changed = True
-              if changed:
-                  p.write_text(text, encoding="utf-8")
-                  print(f"Cleaned GCC flags from {p}")
+          def clean_text(text: str) -> str:
+              for tok in bad_tokens:
+                  text = text.replace(tok, "")
+              return text
 
-          for target_file in [
+          for p in [
               Path("Makefile"),
+              Path("Kbuild"),
               Path("arch/arm64/Makefile"),
+              Path(f"arch/arm64/configs/{DEFCONFIG}"),
               Path("out/.config"),
               Path("out/include/config/auto.conf"),
           ]:
-              strip_flags_from_file(target_file)
+              if p.exists():
+                  orig = p.read_text(encoding="utf-8", errors="ignore")
+                  cleaned = clean_text(orig)
+                  if cleaned != orig:
+                      p.write_text(cleaned, encoding="utf-8")
+                      print(f"Cleaned {p}")
 
           cfg_path = Path("out/.config")
           lines = [
@@ -160,7 +161,7 @@ jobs:
               "# CONFIG_CC_STACKPROTECTOR_REGULAR is not set\n",
               "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
           ])
-          cfg_path.write_text("".join(lines), encoding="utf-8")
+          cfg_path.write_text(clean_text("".join(lines)), encoding="utf-8")
           EOF
 
           yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
@@ -168,19 +169,21 @@ jobs:
 
           python3 - << 'EOF'
           from pathlib import Path
-          bad_flags = (
+          bad_tokens = (
+              "-fmodulo-sched-allow-regmoves",
+              "-allow-regmoves",
+              "allow-regmoves",
+              "-fmodulo-sched",
               "-fpredictive-commoning",
               "-fno-aggressive-loop-optimizations",
-              "-fmodulo-sched",
-              "-fmodulo-sched-allow-regmoves",
               "-funswitch-loops",
               "-fgcse-after-reload",
           )
           for p in [Path("out/.config"), Path("out/include/config/auto.conf")]:
               if p.exists():
                   text = p.read_text(encoding="utf-8", errors="ignore")
-                  for flag in bad_flags:
-                      text = text.replace(flag, "")
+                  for tok in bad_tokens:
+                      text = text.replace(tok, "")
                   p.write_text(text, encoding="utf-8")
           EOF
 
