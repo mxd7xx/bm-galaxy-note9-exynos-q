@@ -194,9 +194,15 @@ jobs:
 
       - name: Build Kernel Image
         run: |
+          set -o pipefail
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="--target=aarch64-linux-gnu -Wno-unknown-warning-option" Image
+            KCFLAGS="--target=aarch64-linux-gnu -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes" \
+            Image 2>&1 | tee build.log || {
+              echo "=== EXACT COMPILER ERRORS ==="
+              grep -n -C 3 "error:" build.log | tail -n 50
+              exit 1
+            }
           ls -lh out/arch/arm64/boot/Image
 
       - name: Package AnyKernel3 Flashable Zip
