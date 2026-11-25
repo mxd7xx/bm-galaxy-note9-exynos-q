@@ -114,15 +114,35 @@ jobs:
 
           python3 - << 'EOF'
           cfg_path = "out/.config"
+          bad_flags = (
+              "-fpredictive-commoning",
+              "-fno-aggressive-loop-optimizations",
+              "-fmodulo-sched",
+              "-fmodulo-sched-allow-regmoves",
+              "-funswitch-loops",
+              "-fgcse-after-reload",
+          )
           with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
-              lines = [
-                  l for l in f
-                  if not l.startswith("CONFIG_KSU=")
-                  and not l.startswith("# CONFIG_KSU")
-                  and not l.startswith("CONFIG_CC_STACKPROTECTOR")
-                  and not l.startswith("# CONFIG_CC_STACKPROTECTOR")
-              ]
-          lines.extend([
+              raw_lines = f.readlines()
+
+          cleaned = []
+          for line in raw_lines:
+              if line.startswith("CONFIG_KSU=") or line.startswith("# CONFIG_KSU"):
+                  continue
+              if line.startswith("CONFIG_CC_STACKPROTECTOR") or line.startswith("# CONFIG_CC_STACKPROTECTOR"):
+                  continue
+              if any(flag in line for flag in bad_flags):
+                  if "=" in line:
+                      k, v = line.split("=", 1)
+                      for flag in bad_flags:
+                          v = v.replace(flag, "")
+                      v = " ".join(v.split())
+                      line = f"{k}={v}\n"
+                  else:
+                      continue
+              cleaned.append(line)
+
+          cleaned.extend([
               "CONFIG_KSU=y\n",
               "CONFIG_CC_STACKPROTECTOR=y\n",
               "CONFIG_CC_STACKPROTECTOR_NONE=y\n",
@@ -130,7 +150,7 @@ jobs:
               "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
           ])
           with open(cfg_path, "w", encoding="utf-8") as f:
-              f.writelines(lines)
+              f.writelines(cleaned)
           EOF
 
           yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
@@ -141,7 +161,7 @@ jobs:
         run: |
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="--target=aarch64-linux-gnu" Image
+            KCFLAGS="--target=aarch64-linux-gnu -Wno-unknown-warning-option" Image
           ls -lh out/arch/arm64/boot/Image
 
       - name: Package AnyKernel3 Flashable Zip
