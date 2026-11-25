@@ -47,7 +47,7 @@ jobs:
           grep -rnE "(int|void|bool|long)\s+ksu_[a-zA-Z0-9_]+\s*\(" drivers/kernelsu/ | head -n 80
           grep -rnE "ksu_handle_[a-zA-Z0-9_]+" drivers/kernelsu/ | head -n 80
 
-      - name: Patch Linux 4.9 Hooks in fs/exec.c, drivers/input/input.c, and include/linux/audit.h
+      - name: Patch Linux 4.9 Hooks and Compatibility Fixes
         run: |
           python3 - << 'EOF'
           from pathlib import Path
@@ -138,6 +138,18 @@ jobs:
               if patched_audit:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
+
+          # 4. Forward-declare wakeup_source_deactivate in drivers/base/power/wakeup.c
+          wakeup_path = Path("drivers/base/power/wakeup.c")
+          if wakeup_path.exists():
+              w_src = wakeup_path.read_text(encoding="utf-8", errors="ignore")
+              fwd = "static void wakeup_source_deactivate(struct wakeup_source *ws);"
+              defn = "static void wakeup_source_deactivate(struct wakeup_source *ws)\n{"
+              if fwd not in w_src and defn in w_src:
+                  idx = w_src.find(defn)
+                  w_src = w_src[:idx] + fwd + "\n\n" + w_src[idx:]
+                  wakeup_path.write_text(w_src, encoding="utf-8")
+                  print("Forward-declared wakeup_source_deactivate in drivers/base/power/wakeup.c")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
@@ -146,7 +158,7 @@ jobs:
         run: |
           ls -la arch/arm64/configs/*crownlte* || true
           mkdir -p out
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=aarch64-linux-gnu-ld HOSTCC=clang HOSTLD=ld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           python3 - << 'EOF'
@@ -203,7 +215,7 @@ jobs:
           cfg_path.write_text(clean_text("".join(lines)), encoding="utf-8")
           EOF
 
-          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
+          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=aarch64-linux-gnu-ld HOSTCC=clang HOSTLD=ld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
 
           python3 - << 'EOF'
@@ -231,7 +243,7 @@ jobs:
       - name: Build Kernel Image
         run: |
           set -o pipefail
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld HOSTCC=clang HOSTLD=ld.lld \
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=aarch64-linux-gnu-ld HOSTCC=clang HOSTLD=ld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes" \
             Image 2>&1 | tee build.log || {
