@@ -107,6 +107,7 @@ jobs:
       - name: Configure Defconfig with CONFIG_KSU=y
         run: |
           DEFCONFIG="exynos9810-crownlte_defconfig"
+          ls -la arch/arm64/configs/*crownlte* || true
           mkdir -p out
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
@@ -123,9 +124,9 @@ jobs:
               f.writelines(lines)
           EOF
 
-          yes "" | make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/dev/null
-          grep -E "CONFIG_KSU" out/.config || { echo "ERROR: CONFIG_KSU not enabled in out/.config"; exit 1; }
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E "KSU" out/.config || { echo "ERROR: KSU symbol missing after olddefconfig"; exit 1; }
 
       - name: Build Kernel Image
         run: |
