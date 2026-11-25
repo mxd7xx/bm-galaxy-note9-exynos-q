@@ -139,23 +139,24 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. File-scope forward declaration of wakeup_source_deactivate after all #include lines
+          # 4. Forward-declare wakeup_source_deactivate right before its call in wakeup.c
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
               if fwd_stmt.strip() not in "".join(w_lines):
-                  last_inc = -1
+                  inserted = False
                   for idx_line, l in enumerate(w_lines):
-                      if l.lstrip().startswith("#include"):
-                          last_inc = idx_line
-                  insert_at = (last_inc + 1) if last_inc != -1 else 0
-                  w_lines.insert(insert_at, "\n" + fwd_stmt + "\n")
-                  wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                  print(f"File-scope forward decl inserted at line {insert_at + 1}")
-              for idx_l, l in enumerate(wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
-                  if "wakeup_source_deactivate" in l:
-                      print(f"wakeup.c:{idx_l}: {l}")
+                      if "wakeup_source_deactivate(ws" in l:
+                          w_lines.insert(idx_line, fwd_stmt)
+                          wakeup_path.write_text("".join(w_lines), encoding="utf-8")
+                          print(f"Inserted wakeup_source_deactivate forward decl at line {idx_line + 1}")
+                          inserted = True
+                          break
+                  if not inserted:
+                      print("WARN: wakeup_source_deactivate(ws not matched in wakeup.c")
+              for start_l in range(max(0, 595), min(len(w_lines), 612)):
+                  print(f"wakeup.c:{start_l + 1}: {w_lines[start_l].rstrip()}")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
