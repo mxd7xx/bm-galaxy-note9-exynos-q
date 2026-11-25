@@ -143,15 +143,12 @@ jobs:
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              for idx_line, l in enumerate(w_lines, start=1):
-                  if "wakeup_source_deactivate" in l:
-                      print(f"wakeup.c:{idx_line}: {l.rstrip()}")
-
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
               w_text = "".join(w_lines)
               if fwd_stmt.strip() not in w_text:
                   for idx_line, l in enumerate(w_lines):
-                      if "wakeup_source_deactivate(" in l and not l.lstrip().startswith("static ") and not l.rstrip().endswith(";"):
+                      stripped = l.lstrip()
+                      if "wakeup_source_deactivate(" in stripped and not stripped.startswith("static void wakeup_source_deactivate("):
                           w_lines.insert(idx_line, "\n" + fwd_stmt + "\n")
                           wakeup_path.write_text("".join(w_lines), encoding="utf-8")
                           print(f"Inserted forward declaration before line {idx_line + 1} in wakeup.c")
