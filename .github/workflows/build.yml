@@ -168,9 +168,22 @@ jobs:
             chmod 755 pkg_work/META-INF/com/google/android/update-binary
           fi
           echo "#MAGISK" > pkg_work/META-INF/com/google/android/updater-script
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' pkg_work/anykernel.sh
-          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|block=/dev/block/platform/11120000.ufs/by-name/BOOT;|g' pkg_work/anykernel.sh
-          sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' pkg_work/anykernel.sh
+
+          python3 - << 'EOF'
+          import re
+
+          with open("pkg_work/anykernel.sh", "r", encoding="utf-8", errors="ignore") as f:
+              ak = f.read()
+
+          ak = re.sub(r"do\.devicecheck\s*=\s*1", "do.devicecheck=0", ak)
+          ak = re.sub(r"is_slot_device\s*=\s*0", "is_slot_device=auto", ak)
+          ak = re.sub(r"block\s*=\s*[^;\n]+;?", "block=/dev/block/platform/11120000.ufs/by-name/BOOT;", ak, count=1)
+
+          with open("pkg_work/anykernel.sh", "w", encoding="utf-8") as f:
+              f.write(ak)
+          EOF
+
+          grep -n "block=" pkg_work/anykernel.sh || true
           rm -rf pkg_work/.git pkg_work/.github pkg_work/README.md
           ZIP_ABS="$(pwd)/BeastMode-N960F-OneUI2.5-KernelSU-Next.zip"
           (
