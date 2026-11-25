@@ -139,21 +139,30 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Place forward declaration of wakeup_source_deactivate after includes in wakeup.c
+          # 4. Forward-declare wakeup_source_deactivate right before the enclosing function of its first call
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
               fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
               w_text = "".join(w_lines)
               if fwd_stmt.strip() not in w_text:
-                  last_inc = -1
+                  call_idx = -1
                   for idx_line, l in enumerate(w_lines):
-                      if l.lstrip().startswith("#include"):
-                          last_inc = idx_line
-                  insert_at = (last_inc + 1) if last_inc != -1 else 0
-                  w_lines.insert(insert_at, "\n" + fwd_stmt + "\n")
-                  wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                  print(f"Inserted wakeup_source_deactivate forward declaration at line {insert_at + 1}")
+                      stripped = l.lstrip()
+                      if "wakeup_source_deactivate(" in stripped and not stripped.startswith("static void wakeup_source_deactivate("):
+                          call_idx = idx_line
+                          break
+                  if call_idx != -1:
+                      fn_start = -1
+                      for back_idx in range(call_idx, -1, -1):
+                          s = w_lines[back_idx].lstrip()
+                          if (s.startswith("static ") or s.startswith("void ") or s.startswith("int ") or s.startswith("bool ")) and "(" in s and not s.endswith(";"):
+                              fn_start = back_idx
+                              break
+                      insert_at = fn_start if fn_start != -1 else call_idx
+                      w_lines.insert(insert_at, "\n" + fwd_stmt + "\n")
+                      wakeup_path.write_text("".join(w_lines), encoding="utf-8")
+                      print(f"Inserted wakeup_source_deactivate forward declaration at line {insert_at + 1}")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
