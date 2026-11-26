@@ -346,6 +346,33 @@ jobs:
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git AnyKernel3/.github
           cp out/arch/arm64/boot/Image AnyKernel3/Image
+
+          python3 - << 'EOF'
+          from pathlib import Path
+
+          ak_path = Path("AnyKernel3/anykernel.sh")
+          src = ak_path.read_text(encoding="utf-8", errors="ignore")
+
+          lines = []
+          for line in src.splitlines(keepends=True):
+              stripped = line.lstrip()
+              if stripped.startswith("device.name1="):
+                  lines.append('device.name1=crownlte\n')
+              elif stripped.startswith("device.name2="):
+                  lines.append('device.name2=SM-N960F\n')
+              elif stripped.startswith("device.name3=") or stripped.startswith("device.name4="):
+                  lines.append("# " + line)
+              elif "Unsupported device" in line or 'abort "Unsupported device' in line:
+                  lines.append("# " + line)
+              else:
+                  lines.append(line)
+
+          patched = "".join(lines)
+          patched = patched.replace("supported.versions=", "# supported.versions=")
+          ak_path.write_text(patched, encoding="utf-8")
+          print("Patched AnyKernel3/anykernel.sh for crownlte / SM-N960F")
+          EOF
+
           cd AnyKernel3
           zip -r9 ../BeastMode-N960F-OneUI2.5-KernelSU-Next.zip * -x '*.git*'
           cd ..
