@@ -369,8 +369,12 @@ jobs:
 
           patched = "".join(lines)
           patched = patched.replace("supported.versions=", "# supported.versions=")
+          patched = patched.replace("block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;", "block=boot;")
+          patched = patched.replace("block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot", "block=boot")
+          if "block=boot" not in patched:
+              patched = patched.replace("is_slot_device=", "block=boot;\nis_slot_device=")
           ak_path.write_text(patched, encoding="utf-8")
-          print("Patched AnyKernel3/anykernel.sh for crownlte / SM-N960F")
+          print("Patched AnyKernel3/anykernel.sh for crownlte / SM-N960F and block=boot")
           EOF
 
           cd AnyKernel3
