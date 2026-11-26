@@ -276,6 +276,8 @@ jobs:
               and not l.startswith("# CONFIG_KSU")
               and not l.startswith("CONFIG_CC_STACKPROTECTOR")
               and not l.startswith("# CONFIG_CC_STACKPROTECTOR")
+              and not l.startswith("CONFIG_CRYPTO_FIPS")
+              and not l.startswith("# CONFIG_CRYPTO_FIPS")
           ]
           lines.extend([
               "CONFIG_KSU=y\n",
@@ -283,6 +285,7 @@ jobs:
               "CONFIG_CC_STACKPROTECTOR_NONE=y\n",
               "# CONFIG_CC_STACKPROTECTOR_REGULAR is not set\n",
               "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
+              "# CONFIG_CRYPTO_FIPS is not set\n",
           ])
           cfg_path.write_text(clean_text("".join(lines)), encoding="utf-8")
           EOF
@@ -310,7 +313,7 @@ jobs:
                   p.write_text(text, encoding="utf-8")
           EOF
 
-          grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR" out/.config
+          grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR|CONFIG_CRYPTO_FIPS" out/.config
 
       - name: Build Kernel Image
         run: |
