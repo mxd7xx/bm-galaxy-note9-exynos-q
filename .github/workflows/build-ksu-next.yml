@@ -202,11 +202,18 @@ jobs:
                       "\t\t\tint irq;\n"
                       "\t\t\tvoid *fn;\n"
                       "\t\t\tunsigned long long total_duration;\n"
+                      "\t\t\tunsigned long long avg_period;\n"
                       "\t\t\tunsigned long count;\n"
                       "\t\t} irq_info;\n"
                       "\t\tstruct {\n"
                       "\t\t\tchar task_comm[16];\n"
                       "\t\t} task_info;\n"
+                      "\t\tstruct {\n"
+                      "\t\t\tchar *mode;\n"
+                      "\t\t} cpuidle_info;\n"
+                      "\t\tstruct {\n"
+                      "\t\t\tint cmd;\n"
+                      "\t\t} smc_info;\n"
                       "\t};\n"
                       "};\n"
                       "#endif\n"
@@ -225,7 +232,7 @@ jobs:
                       "#endif\n\n"
                   )
                   ess_log_path.write_text(fallback_def + ess_src, encoding="utf-8")
-                  print("FORCE-PATCHED exynos-ss-log.c with fallback hardlockup/softlockup structs at line 1")
+                  print("FORCE-PATCHED exynos-ss-log.c with complete fallback structs at line 1")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
@@ -321,7 +328,7 @@ jobs:
           set -o pipefail
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=aarch64-linux-gnu-ld HOSTCC=clang HOSTLD=ld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes -Wno-error=implicit-function-declaration" \
+            KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes -Wno-error=implicit-function-declaration -Wno-int-conversion" \
             Image 2>&1 | tee build.log || {
               echo "=== EXACT COMPILER ERRORS ==="
               grep -n -C 3 "error:" build.log | tail -n 50
