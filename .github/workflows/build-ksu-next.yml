@@ -139,18 +139,14 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Insert forward declaration right before the first call to wakeup_source_deactivate
+          # 4. Force forward declaration of wakeup_source_deactivate after includes
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
               w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              fwd_stmt = "static void wakeup_source_deactivate(struct wakeup_source *ws);\n"
-              if fwd_stmt not in w_lines:
-                  for idx_line, l in enumerate(w_lines):
-                      if "wakeup_source_deactivate(" in l and not l.lstrip().startswith("static void"):
-                          w_lines.insert(idx_line, fwd_stmt)
-                          wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-                          print(f"PATCHED wakeup.c at line {idx_line + 1}")
-                          break
+              last_inc = max((i for i, l in enumerate(w_lines) if l.lstrip().startswith("#include")), default=0)
+              w_lines.insert(last_inc + 1, "\nstatic void wakeup_source_deactivate(struct wakeup_source *ws);\n")
+              wakeup_path.write_text("".join(w_lines), encoding="utf-8")
+              print(f"FORCE-PATCHED wakeup.c at line {last_inc + 2}")
           EOF
           grep -n -C 2 "wakeup_source_deactivate" drivers/base/power/wakeup.c || true
 
