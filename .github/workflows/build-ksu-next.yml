@@ -150,45 +150,46 @@ jobs:
           # 5. Fix missing struct hardlockup_info / HL_IRQ_STUCK in drivers/trace/exynos-ss-log.c
           ess_log_path = Path("drivers/trace/exynos-ss-log.c")
           if ess_log_path.exists():
-              hdr_found = None
-              for search_root in (Path("include"), Path("drivers/trace")):
-                  if not search_root.exists():
+              matched_headers = []
+              for h in Path(".").rglob("*.h"):
+                  if ".git" in h.parts or "out" in h.parts:
                       continue
-                  for h in search_root.rglob("*.h"):
-                      txt = h.read_text(encoding="utf-8", errors="ignore")
-                      if "HL_IRQ_STUCK" in txt and "struct hardlockup_info" in txt:
-                          hdr_found = h
-                          break
-                  if hdr_found:
-                      break
+                  txt = h.read_text(encoding="utf-8", errors="ignore")
+                  if "HL_IRQ_STUCK" in txt or "struct hardlockup_info {" in txt or "struct hardlockup_info{" in txt:
+                      matched_headers.append(h)
 
-              if hdr_found:
-                  print(f"Found hardlockup_info header: {hdr_found}")
-                  h_lines = hdr_found.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-                  # Unguard any #ifdef / #if immediately enclosing HL_IRQ_STUCK
-                  hl_idx = next((i for i, l in enumerate(h_lines) if "HL_IRQ_STUCK" in l), -1)
-                  if hl_idx != -1:
-                      for back in range(hl_idx, -1, -1):
-                          s = h_lines[back].lstrip()
-                          if s.startswith("#ifdef ") or s.startswith("#if "):
-                              h_lines[back] = "#if 1 /* unguarded for exynos-ss-log */\n"
-                              hdr_found.write_text("".join(h_lines), encoding="utf-8")
-                              print(f"Unguarded {hdr_found} at line {back + 1}")
-                              break
-                          if s.startswith("#endif"):
-                              break
+              print("Matched hardlockup headers:", [str(h) for h in matched_headers])
+              inc_lines = []
+              for h in matched_headers:
+                  h_lines = h.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+                  changed = False
+                  for token in ("HL_IRQ_STUCK", "struct hardlockup_info"):
+                      for idx, l in enumerate(h_lines):
+                          if token in l:
+                              for back in range(idx - 1, -1, -1):
+                                  s = h_lines[back].lstrip()
+                                  if s.startswith("#ifdef ") or s.startswith("#if "):
+                                      if "unguarded" not in s and "#ifndef " not in s:
+                                          h_lines[back] = "#if 1 /* unguarded for exynos-ss-log */\n"
+                                          changed = True
+                                          print(f"Unguarded {h} at line {back + 1}")
+                                      break
+                                  if s.startswith("#endif"):
+                                      break
+                  if changed:
+                      h.write_text("".join(h_lines), encoding="utf-8")
+                  inc_lines.append(f'#include "{h.as_posix()}"\n')
 
-                  # Ensure exynos-ss-log.c includes it
-                  ess_src = ess_log_path.read_text(encoding="utf-8", errors="ignore")
-                  if str(hdr_found).startswith("include/"):
-                      inc_line = f'#include <{str(hdr_found)[len("include/"):]}>\n'
-                  else:
-                      inc_line = f'#include "{hdr_found.name}"\n'
-                  if inc_line.strip() not in ess_src:
-                      ess_log_path.write_text(inc_line + ess_src, encoding="utf-8")
-                      print(f"Added {inc_line.strip()} to {ess_log_path}")
+              if inc_lines:
+                  ess_lines = ess_log_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+                  first_inc = next((i for i, l in enumerate(ess_lines) if l.lstrip().startswith("#include")), 0)
+                  for inc in reversed(inc_lines):
+                      if inc not in ess_lines:
+                          ess_lines.insert(first_inc, inc)
+                  ess_log_path.write_text("".join(ess_lines), encoding="utf-8")
+                  print(f"Injected {len(inc_lines)} header(s) into {ess_log_path} at line {first_inc + 1}")
               else:
-                  print("WARN: header defining HL_IRQ_STUCK not found")
+                  print("WARN: No header found defining HL_IRQ_STUCK or struct hardlockup_info")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
