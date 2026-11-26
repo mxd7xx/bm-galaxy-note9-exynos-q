@@ -139,16 +139,14 @@ jobs:
                   audit_path.write_text("".join(out_lines), encoding="utf-8")
                   print("Guarded static inline audit_update_lsm_rules in include/linux/audit.h")
 
-          # 4. Force forward declaration of wakeup_source_deactivate after includes
+          # 4. Force forward declaration at line 1 (outside any #ifdef)
           wakeup_path = Path("drivers/base/power/wakeup.c")
           if wakeup_path.exists():
-              w_lines = wakeup_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              last_inc = max((i for i, l in enumerate(w_lines) if l.lstrip().startswith("#include")), default=0)
-              w_lines.insert(last_inc + 1, "\nstatic void wakeup_source_deactivate(struct wakeup_source *ws);\n")
-              wakeup_path.write_text("".join(w_lines), encoding="utf-8")
-              print(f"FORCE-PATCHED wakeup.c at line {last_inc + 2}")
+              w_src = wakeup_path.read_text(encoding="utf-8", errors="ignore")
+              header = "struct wakeup_source;\nstatic void wakeup_source_deactivate(struct wakeup_source *ws);\n\n"
+              wakeup_path.write_text(header + w_src, encoding="utf-8")
+              print("FORCE-PATCHED wakeup.c at line 1")
           EOF
-          grep -n -C 2 "wakeup_source_deactivate" drivers/base/power/wakeup.c || true
 
       - name: Configure Defconfig with CONFIG_KSU=y
         env:
