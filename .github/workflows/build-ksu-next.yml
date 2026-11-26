@@ -235,6 +235,7 @@ jobs:
 
           python3 - << 'EOF'
           import os
+          import re
           from pathlib import Path
 
           defconfig_name = os.environ.get("DEFCONFIG", "exynos9810-crownlte_defconfig")
@@ -270,15 +271,22 @@ jobs:
                       print(f"Cleaned {p}")
 
           cfg_path = Path("out/.config")
-          lines = [
-              l for l in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-              if not l.startswith("CONFIG_KSU=")
-              and not l.startswith("# CONFIG_KSU")
-              and not l.startswith("CONFIG_CC_STACKPROTECTOR")
-              and not l.startswith("# CONFIG_CC_STACKPROTECTOR")
-              and not l.startswith("CONFIG_CRYPTO_FIPS")
-              and not l.startswith("# CONFIG_CRYPTO_FIPS")
-          ]
+          lines = []
+          disabled_fips = set()
+          for l in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True):
+              if (
+                  l.startswith("CONFIG_KSU=")
+                  or l.startswith("# CONFIG_KSU")
+                  or l.startswith("CONFIG_CC_STACKPROTECTOR")
+                  or l.startswith("# CONFIG_CC_STACKPROTECTOR")
+              ):
+                  continue
+              m = re.match(r"^(CONFIG_[A-Z0-9_]*FIPS[A-Z0-9_]*)=", l)
+              if m:
+                  disabled_fips.add(m.group(1))
+                  continue
+              lines.append(l)
+
           lines.extend([
               "CONFIG_KSU=y\n",
               "CONFIG_CC_STACKPROTECTOR=y\n",
@@ -286,7 +294,11 @@ jobs:
               "# CONFIG_CC_STACKPROTECTOR_REGULAR is not set\n",
               "# CONFIG_CC_STACKPROTECTOR_STRONG is not set\n",
               "# CONFIG_CRYPTO_FIPS is not set\n",
+              "# CONFIG_EXYNOS_FMP_FIPS is not set\n",
+              "# CONFIG_FIPS_FMP is not set\n",
           ])
+          for sym in sorted(disabled_fips):
+              lines.append(f"# {sym} is not set\n")
           cfg_path.write_text(clean_text("".join(lines)), encoding="utf-8")
           EOF
 
@@ -313,7 +325,7 @@ jobs:
                   p.write_text(text, encoding="utf-8")
           EOF
 
-          grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR|CONFIG_CRYPTO_FIPS" out/.config
+          grep -E "CONFIG_KSU|CONFIG_CC_STACKPROTECTOR|FIPS" out/.config
 
       - name: Build Kernel Image
         run: |
