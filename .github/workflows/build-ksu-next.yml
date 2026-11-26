@@ -147,7 +147,7 @@ jobs:
               wakeup_path.write_text(header + w_src, encoding="utf-8")
               print("FORCE-PATCHED wakeup.c at line 1")
 
-          # 5. Fix missing struct hardlockup_info / HL_IRQ_STUCK in drivers/trace/exynos-ss-log.c
+          # 5. Fix missing hardlockup_info / softlockup_info in drivers/trace/exynos-ss-log.c
           ess_log_path = Path("drivers/trace/exynos-ss-log.c")
           if ess_log_path.exists():
               matched_headers = []
@@ -167,7 +167,7 @@ jobs:
                       h_lines = h.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
                       changed = False
                       for idx, l in enumerate(h_lines):
-                          if "HL_IRQ_STUCK" in l or "struct hardlockup_info" in l:
+                          if "HL_IRQ_STUCK" in l or "struct hardlockup_info" in l or "struct softlockup_info" in l:
                               for back in range(idx - 1, -1, -1):
                                   s = h_lines[back].lstrip()
                                   if s.startswith("#ifdef ") or s.startswith("#if "):
@@ -189,6 +189,7 @@ jobs:
                       "enum hardlockup_type {\n"
                       "\tHL_TASK_STUCK = 1,\n"
                       "\tHL_IRQ_STUCK,\n"
+                      "\tHL_IRQ_STORM,\n"
                       "\tHL_IDLE_STUCK,\n"
                       "\tHL_SMC_CALL_STUCK,\n"
                       "\tHL_UNKNOWN_STUCK,\n"
@@ -208,10 +209,23 @@ jobs:
                       "\t\t} task_info;\n"
                       "\t};\n"
                       "};\n"
+                      "#endif\n"
+                      "#ifndef SL_TASK_STUCK\n"
+                      "enum softlockup_type {\n"
+                      "\tSL_TASK_STUCK = 1,\n"
+                      "\tSL_UNKNOWN_STUCK,\n"
+                      "};\n"
+                      "struct softlockup_info {\n"
+                      "\tenum softlockup_type sl_type;\n"
+                      "\tunsigned long long delay_time;\n"
+                      "\tstruct {\n"
+                      "\t\tchar task_comm[16];\n"
+                      "\t} task_info;\n"
+                      "};\n"
                       "#endif\n\n"
                   )
                   ess_log_path.write_text(fallback_def + ess_src, encoding="utf-8")
-                  print("FORCE-PATCHED exynos-ss-log.c with fallback struct hardlockup_info at line 1")
+                  print("FORCE-PATCHED exynos-ss-log.c with fallback hardlockup/softlockup structs at line 1")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
