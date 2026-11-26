@@ -155,41 +155,63 @@ jobs:
                   if ".git" in h.parts or "out" in h.parts:
                       continue
                   txt = h.read_text(encoding="utf-8", errors="ignore")
-                  if "HL_IRQ_STUCK" in txt or "struct hardlockup_info {" in txt or "struct hardlockup_info{" in txt:
+                  if "HL_IRQ_STUCK" in txt:
                       matched_headers.append(h)
 
               print("Matched hardlockup headers:", [str(h) for h in matched_headers])
-              inc_lines = []
-              for h in matched_headers:
-                  h_lines = h.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-                  changed = False
-                  for token in ("HL_IRQ_STUCK", "struct hardlockup_info"):
+              ess_src = ess_log_path.read_text(encoding="utf-8", errors="ignore")
+
+              if matched_headers:
+                  inc_block = ""
+                  for h in matched_headers:
+                      h_lines = h.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
+                      changed = False
                       for idx, l in enumerate(h_lines):
-                          if token in l:
+                          if "HL_IRQ_STUCK" in l or "struct hardlockup_info" in l:
                               for back in range(idx - 1, -1, -1):
                                   s = h_lines[back].lstrip()
                                   if s.startswith("#ifdef ") or s.startswith("#if "):
-                                      if "unguarded" not in s and "#ifndef " not in s:
+                                      if "unguarded" not in s and not s.startswith("#ifndef "):
                                           h_lines[back] = "#if 1 /* unguarded for exynos-ss-log */\n"
                                           changed = True
                                           print(f"Unguarded {h} at line {back + 1}")
                                       break
                                   if s.startswith("#endif"):
                                       break
-                  if changed:
-                      h.write_text("".join(h_lines), encoding="utf-8")
-                  inc_lines.append(f'#include "{h.as_posix()}"\n')
-
-              if inc_lines:
-                  ess_lines = ess_log_path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-                  first_inc = next((i for i, l in enumerate(ess_lines) if l.lstrip().startswith("#include")), 0)
-                  for inc in reversed(inc_lines):
-                      if inc not in ess_lines:
-                          ess_lines.insert(first_inc, inc)
-                  ess_log_path.write_text("".join(ess_lines), encoding="utf-8")
-                  print(f"Injected {len(inc_lines)} header(s) into {ess_log_path} at line {first_inc + 1}")
+                      if changed:
+                          h.write_text("".join(h_lines), encoding="utf-8")
+                      inc_block += f'#include "{h.as_posix()}"\n'
+                  ess_log_path.write_text(inc_block + ess_src, encoding="utf-8")
+                  print("FORCE-PATCHED exynos-ss-log.c with matched headers at line 1")
               else:
-                  print("WARN: No header found defining HL_IRQ_STUCK or struct hardlockup_info")
+                  fallback_def = (
+                      "#ifndef HL_IRQ_STUCK\n"
+                      "enum hardlockup_type {\n"
+                      "\tHL_TASK_STUCK = 1,\n"
+                      "\tHL_IRQ_STUCK,\n"
+                      "\tHL_IDLE_STUCK,\n"
+                      "\tHL_SMC_CALL_STUCK,\n"
+                      "\tHL_UNKNOWN_STUCK,\n"
+                      "};\n"
+                      "struct hardlockup_info {\n"
+                      "\tenum hardlockup_type hl_type;\n"
+                      "\tunsigned long long delay_time;\n"
+                      "\tunion {\n"
+                      "\t\tstruct {\n"
+                      "\t\t\tint irq;\n"
+                      "\t\t\tvoid *fn;\n"
+                      "\t\t\tunsigned long long total_duration;\n"
+                      "\t\t\tunsigned long count;\n"
+                      "\t\t} irq_info;\n"
+                      "\t\tstruct {\n"
+                      "\t\t\tchar task_comm[16];\n"
+                      "\t\t} task_info;\n"
+                      "\t};\n"
+                      "};\n"
+                      "#endif\n\n"
+                  )
+                  ess_log_path.write_text(fallback_def + ess_src, encoding="utf-8")
+                  print("FORCE-PATCHED exynos-ss-log.c with fallback struct hardlockup_info at line 1")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
