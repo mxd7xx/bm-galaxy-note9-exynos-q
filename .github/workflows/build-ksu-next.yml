@@ -147,92 +147,81 @@ jobs:
               wakeup_path.write_text(header + w_src, encoding="utf-8")
               print("FORCE-PATCHED wakeup.c at line 1")
 
-          # 5. Fix missing hardlockup_info / softlockup_info in drivers/trace/exynos-ss-log.c
+          # 5. Fix missing hardlockup_info / softlockup_info and weak stubs in drivers/trace/exynos-ss-log.c
           ess_log_path = Path("drivers/trace/exynos-ss-log.c")
           if ess_log_path.exists():
-              matched_headers = []
-              for h in Path(".").rglob("*.h"):
-                  if ".git" in h.parts or "out" in h.parts:
-                      continue
-                  txt = h.read_text(encoding="utf-8", errors="ignore")
-                  if "HL_IRQ_STUCK" in txt:
-                      matched_headers.append(h)
-
-              print("Matched hardlockup headers:", [str(h) for h in matched_headers])
               ess_src = ess_log_path.read_text(encoding="utf-8", errors="ignore")
+              fallback_def = (
+                  "#ifndef HL_IRQ_STUCK\n"
+                  "enum hardlockup_type {\n"
+                  "\tHL_TASK_STUCK = 1,\n"
+                  "\tHL_IRQ_STUCK,\n"
+                  "\tHL_IRQ_STORM,\n"
+                  "\tHL_IDLE_STUCK,\n"
+                  "\tHL_SMC_CALL_STUCK,\n"
+                  "\tHL_UNKNOWN_STUCK,\n"
+                  "};\n"
+                  "struct hardlockup_info {\n"
+                  "\tenum hardlockup_type hl_type;\n"
+                  "\tunsigned long long delay_time;\n"
+                  "\tunion {\n"
+                  "\t\tstruct {\n"
+                  "\t\t\tint irq;\n"
+                  "\t\t\tvoid *fn;\n"
+                  "\t\t\tunsigned long long total_duration;\n"
+                  "\t\t\tunsigned long long avg_period;\n"
+                  "\t\t\tunsigned long count;\n"
+                  "\t\t} irq_info;\n"
+                  "\t\tstruct {\n"
+                  "\t\t\tchar task_comm[16];\n"
+                  "\t\t} task_info;\n"
+                  "\t\tstruct {\n"
+                  "\t\t\tchar *mode;\n"
+                  "\t\t} cpuidle_info;\n"
+                  "\t\tstruct {\n"
+                  "\t\t\tint cmd;\n"
+                  "\t\t} smc_info;\n"
+                  "\t};\n"
+                  "};\n"
+                  "#endif\n"
+                  "#ifndef SL_TASK_STUCK\n"
+                  "enum softlockup_type {\n"
+                  "\tSL_TASK_STUCK = 1,\n"
+                  "\tSL_UNKNOWN_STUCK,\n"
+                  "};\n"
+                  "struct softlockup_info {\n"
+                  "\tenum softlockup_type sl_type;\n"
+                  "\tunsigned long long delay_time;\n"
+                  "\tstruct {\n"
+                  "\t\tchar task_comm[16];\n"
+                  "\t} task_info;\n"
+                  "};\n"
+                  "#endif\n\n"
+              )
+              weak_stubs = (
+                  "\nvoid __attribute__((weak)) update_hardlockup_type(int cpu) {}\n"
+                  "int __attribute__((weak)) get_hardlockup_thresh(void) { return 0; }\n"
+                  "int __attribute__((weak)) get_ess_softlockup_thresh(void) { return 0; }\n"
+              )
+              ess_log_path.write_text(fallback_def + ess_src + weak_stubs, encoding="utf-8")
+              print("FORCE-PATCHED exynos-ss-log.c with fallback structs and weak stubs")
 
-              if matched_headers:
-                  inc_block = ""
-                  for h in matched_headers:
-                      h_lines = h.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)
-                      changed = False
-                      for idx, l in enumerate(h_lines):
-                          if "HL_IRQ_STUCK" in l or "struct hardlockup_info" in l or "struct softlockup_info" in l:
-                              for back in range(idx - 1, -1, -1):
-                                  s = h_lines[back].lstrip()
-                                  if s.startswith("#ifdef ") or s.startswith("#if "):
-                                      if "unguarded" not in s and not s.startswith("#ifndef "):
-                                          h_lines[back] = "#if 1 /* unguarded for exynos-ss-log */\n"
-                                          changed = True
-                                          print(f"Unguarded {h} at line {back + 1}")
-                                      break
-                                  if s.startswith("#endif"):
-                                      break
-                      if changed:
-                          h.write_text("".join(h_lines), encoding="utf-8")
-                      inc_block += f'#include "{h.as_posix()}"\n'
-                  ess_log_path.write_text(inc_block + ess_src, encoding="utf-8")
-                  print("FORCE-PATCHED exynos-ss-log.c with matched headers at line 1")
-              else:
-                  fallback_def = (
-                      "#ifndef HL_IRQ_STUCK\n"
-                      "enum hardlockup_type {\n"
-                      "\tHL_TASK_STUCK = 1,\n"
-                      "\tHL_IRQ_STUCK,\n"
-                      "\tHL_IRQ_STORM,\n"
-                      "\tHL_IDLE_STUCK,\n"
-                      "\tHL_SMC_CALL_STUCK,\n"
-                      "\tHL_UNKNOWN_STUCK,\n"
-                      "};\n"
-                      "struct hardlockup_info {\n"
-                      "\tenum hardlockup_type hl_type;\n"
-                      "\tunsigned long long delay_time;\n"
-                      "\tunion {\n"
-                      "\t\tstruct {\n"
-                      "\t\t\tint irq;\n"
-                      "\t\t\tvoid *fn;\n"
-                      "\t\t\tunsigned long long total_duration;\n"
-                      "\t\t\tunsigned long long avg_period;\n"
-                      "\t\t\tunsigned long count;\n"
-                      "\t\t} irq_info;\n"
-                      "\t\tstruct {\n"
-                      "\t\t\tchar task_comm[16];\n"
-                      "\t\t} task_info;\n"
-                      "\t\tstruct {\n"
-                      "\t\t\tchar *mode;\n"
-                      "\t\t} cpuidle_info;\n"
-                      "\t\tstruct {\n"
-                      "\t\t\tint cmd;\n"
-                      "\t\t} smc_info;\n"
-                      "\t};\n"
-                      "};\n"
-                      "#endif\n"
-                      "#ifndef SL_TASK_STUCK\n"
-                      "enum softlockup_type {\n"
-                      "\tSL_TASK_STUCK = 1,\n"
-                      "\tSL_UNKNOWN_STUCK,\n"
-                      "};\n"
-                      "struct softlockup_info {\n"
-                      "\tenum softlockup_type sl_type;\n"
-                      "\tunsigned long long delay_time;\n"
-                      "\tstruct {\n"
-                      "\t\tchar task_comm[16];\n"
-                      "\t} task_info;\n"
-                      "};\n"
-                      "#endif\n\n"
+          # 6. Add stpcpy to lib/string.c (Clang optimizes sprintf into stpcpy on Linux 4.9)
+          str_path = Path("lib/string.c")
+          if str_path.exists():
+              str_src = str_path.read_text(encoding="utf-8", errors="ignore")
+              if "char *stpcpy(" not in str_src:
+                  stpcpy_impl = (
+                      "\nchar *stpcpy(char *__restrict__ dest, const char *__restrict__ src)\n"
+                      "{\n"
+                      "\twhile ((*dest++ = *src++) != '\\0')\n"
+                      "\t\t;\n"
+                      "\treturn --dest;\n"
+                      "}\n"
+                      "EXPORT_SYMBOL(stpcpy);\n"
                   )
-                  ess_log_path.write_text(fallback_def + ess_src, encoding="utf-8")
-                  print("FORCE-PATCHED exynos-ss-log.c with complete fallback structs at line 1")
+                  str_path.write_text(str_src + stpcpy_impl, encoding="utf-8")
+                  print("Added stpcpy to lib/string.c")
           EOF
 
       - name: Configure Defconfig with CONFIG_KSU=y
@@ -328,10 +317,10 @@ jobs:
           set -o pipefail
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=aarch64-linux-gnu-ld HOSTCC=clang HOSTLD=ld \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes -Wno-error=implicit-function-declaration -Wno-int-conversion" \
+            KCFLAGS="--target=aarch64-linux-gnu -I$PWD -Wno-unknown-warning-option -Wno-gnu-variable-sized-type-not-at-end -Wno-unknown-attributes -Wno-error=implicit-function-declaration -Wno-int-conversion -fno-builtin-stpcpy" \
             Image 2>&1 | tee build.log || {
               echo "=== EXACT COMPILER ERRORS ==="
-              grep -n -C 3 "error:" build.log | tail -n 50
+              grep -n -E "error:|undefined reference" build.log | tail -n 50
               exit 1
             }
           ls -lh out/arch/arm64/boot/Image
